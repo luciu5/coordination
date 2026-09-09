@@ -1,0 +1,35 @@
+Package: coordination
+Type: Package
+Title: Coordinated Effects Models for Antitrust Analysis
+Version: 0.0.0.9000
+Date: 2026-09-09
+Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com",
+                  role = c("aut", "cre")),
+             person("David", "Benson",
+                  role = c("ctb"))
+                  )
+Maintainer: Charles Taragin <ctaragin+antitrustr@gmail.com>
+Author: Charles Taragin [aut, cre], David Benson [ctb]
+Imports: methods, BB, nleqslv, numDeriv, antitrust
+Suggests: testthat
+Encoding: UTF-8
+Description: Coordinated-effects models for merger analysis built on the
+    structural demand and cost calibration infrastructure provided by the
+    'antitrust' package. Implements the price leadership equilibrium (PLE)
+    model of coordinated conduct -- a coordinating coalition that prices
+    above Bertrand levels subject to incentive-compatibility constraints,
+    with a competitive fringe that best-responds -- following Mansley,
+    Miller, Sheu & Weinberg (2023). Also implements Grim Trigger
+    sustainability analysis for evaluating whether a coalition of firms
+    playing Bertrand can sustain collusive pricing under a repeated game.
+URL: https://github.com/luciu5/coordination
+License: CC0
+LazyLoad: yes
+Collate:
+    'coordination-package.R'
+    'PriceLeadershipClasses.R'
+    'PriceLeadershipFunctions.R'
+    'GrimTriggerMethods.R'
+Config/roxygen2/version: 7.3.2
+Config/testthat/edition: 3
+RoxygenNote: 7.3.2
