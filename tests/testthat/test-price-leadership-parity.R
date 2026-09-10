@@ -23,7 +23,18 @@ test_that("calcSlack, calcSupermarkup, calcPriceLeadershipParams are exported an
   expect_true(is.finite(sm))
 })
 
-test_that("PriceLeadershipBLP / ple.blp are not present (deferred extraction)", {
-  expect_false(exists("ple.blp", where = asNamespace("coordination"), inherits = FALSE))
-  expect_false("PriceLeadershipBLP" %in% methods::getClasses(asNamespace("coordination")))
+test_that("PriceLeadershipBLP / ple.blp are present and exported", {
+  expect_true(exists("ple.blp", where = asNamespace("coordination"), inherits = FALSE))
+  expect_true("ple.blp" %in% getNamespaceExports("coordination"))
+  expect_true(isVirtualClass("PriceLeadershipBLP") || methods::existsMethod("calcSlopes", "PriceLeadershipBLP"))
+  expect_true("PriceLeadershipBLP" %in% methods::getClasses(asNamespace("coordination")))
+})
+
+test_that("ple.blp() constructs a PriceLeadershipBLP with finite equilibria", {
+  fit <- fixture_ple_blp()
+  expect_s4_class(fit, "PriceLeadershipBLP")
+  expect_identical(fit@slopes$integration, "gauss-hermite")
+  expect_true(all(is.finite(fit@pricePre)))
+  expect_true(all(is.finite(fit@pricePost)))
+  expect_true(all(is.finite(calcShares(fit, TRUE))))
 })
