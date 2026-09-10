@@ -133,6 +133,25 @@ passed to the non-linear equation solver.}
 \sQuote{#} is a number between 1 and the length of \sQuote{prices}.}
 
 \item{...}{Additional options to feed to the optimizer.}
+
+\item{integration}{BLP integration rule for \code{ple.blp}: one of
+\code{"auto"}, \code{"gauss-hermite"}, \code{"monte-carlo"}, or
+\code{"provided"}.}
+
+\item{nNodes}{Number of Gauss-Hermite quadrature nodes (when
+\code{integration = "gauss-hermite"}).}
+
+\item{nDraws}{Number of Monte Carlo draws (when
+\code{integration = "monte-carlo"}).}
+
+\item{consDraws}{Optional user-supplied BLP integration points.}
+
+\item{integrationWeights}{Optional non-negative weights for supplied BLP
+integration points; normalized to sum to one.}
+
+\item{slopes}{For \code{ple.blp}, a list of pre-calibrated BLP demand
+parameters (e.g. \code{alpha}/\code{alphaMean}, \code{sigma},
+\code{meanval}, \code{sigmaNest}).}
 }
 \value{
 An instance of class \code{\linkS4class{PriceLeadership}} with

@@ -8,6 +8,19 @@
 
 
 #'@rdname PriceLeadership-Functions
+#'@param integration BLP integration rule for \code{ple.blp}: one of
+#'  \code{"auto"}, \code{"gauss-hermite"}, \code{"monte-carlo"}, or
+#'  \code{"provided"}.
+#'@param nNodes Number of Gauss-Hermite quadrature nodes (when
+#'  \code{integration = "gauss-hermite"}).
+#'@param nDraws Number of Monte Carlo draws (when
+#'  \code{integration = "monte-carlo"}).
+#'@param consDraws Optional user-supplied BLP integration points.
+#'@param integrationWeights Optional non-negative weights for supplied BLP
+#'  integration points; normalized to sum to one.
+#'@param slopes For \code{ple.blp}, a list of pre-calibrated BLP demand
+#'  parameters (e.g. \code{alpha}/\code{alphaMean}, \code{sigma},
+#'  \code{meanval}, \code{sigmaNest}).
 #'@export
 ple.blp <- function(
   prices,
