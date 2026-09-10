@@ -4,8 +4,13 @@
 \name{PriceLeadership-Classes}
 \alias{PriceLeadership-Classes}
 \alias{PriceLeadership-class}
+\alias{PriceLeadershipBLP-Classes}
+\alias{PriceLeadershipBLP-class}
 \title{Price Leadership Model Classes}
 \description{
-S4 class representing a calibrated price leadership equilibrium
- model. \code{PriceLeadership} extends \code{\linkS4class{Logit}}.
+\code{PriceLeadership} and \code{PriceLeadershipBLP} are S4
+ classes representing calibrated price leadership equilibrium models.
+ \code{PriceLeadership} extends \code{\linkS4class{Logit}} (Logit demand);
+ \code{PriceLeadershipBLP} extends antitrust's \code{LogitBLP}
+ (random-coefficients BLP demand).
 }

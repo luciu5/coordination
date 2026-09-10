@@ -29,6 +29,7 @@ Collate:
     'coordination-package.R'
     'PriceLeadershipClasses.R'
     'PriceLeadershipFunctions.R'
+    'PriceLeadershipBLPFunctions.R'
     'GrimTriggerMethods.R'
 Config/roxygen2/version: 7.3.2
 Config/testthat/edition: 3
