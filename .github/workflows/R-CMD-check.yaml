@@ -1,0 +1,78 @@
+name: R-CMD-check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    name: R ${{ matrix.r }}
+    strategy:
+      fail-fast: false
+      matrix:
+        r: [release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r }}
+
+      - name: Resolve antitrust refactor SHA
+        id: antitrust
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git ls-remote https://github.com/luciu5/antitrust.git refs/heads/refactor | awk 'NR == 1 { print $1 }')"
+          test "${#sha}" -eq 40
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "coordination: $(git rev-parse HEAD)"
+            echo "antitrust refactor: $sha"
+          } | tee dependency-shas.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: check
+          extra-packages: any::rcmdcheck
+
+      - name: Install exact antitrust refactor
+        env:
+          ANTITRUST_SHA: ${{ steps.antitrust.outputs.sha }}
+        shell: Rscript {0}
+        run: |
+          install.packages("remotes", repos = "https://cloud.r-project.org")
+          remotes::install_github(
+            paste0("luciu5/antitrust@", Sys.getenv("ANTITRUST_SHA")),
+            upgrade = "never", dependencies = TRUE
+          )
+          desc <- packageDescription("antitrust")
+          installed_sha <- if (is.null(desc$RemoteSha)) "unknown" else desc$RemoteSha
+          line <- paste0("antitrust installed RemoteSha: ", installed_sha)
+          write(line, file = "dependency-shas.txt", append = TRUE)
+          cat(line, "\n")
+          expected_sha <- Sys.getenv("ANTITRUST_SHA")
+          if (!identical(installed_sha, expected_sha)) {
+            stop(
+              paste0(
+                "Installed antitrust RemoteSha (", installed_sha,
+                ") does not match resolved ANTITRUST_SHA (", expected_sha, ")."
+              )
+            )
+          }
+
+      - name: Check package
+        run: |
+          Rscript -e 'rcmdcheck::rcmdcheck(args = c("--no-manual", "--as-cran"), error_on = "error", check_dir = "check")'
+
+      - name: Upload dependency SHAs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-shas
+          path: dependency-shas.txt

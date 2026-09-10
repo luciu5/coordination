@@ -54,6 +54,7 @@ ple.blp(
   nNodes = NULL,
   nDraws = NULL,
   consDraws = NULL,
+  integrationPoints = NULL,
   integrationWeights = NULL,
   slopes,
   control.slopes,
@@ -144,7 +145,11 @@ passed to the non-linear equation solver.}
 \item{nDraws}{Number of Monte Carlo draws (when
 \code{integration = "monte-carlo"}).}
 
-\item{consDraws}{Optional user-supplied BLP integration points.}
+\item{consDraws}{Optional user-supplied one-dimensional BLP integration points.}
+
+\item{integrationPoints}{Optional user-supplied matrix of standardized BLP
+integration points. Each row is one consumer draw and each column is an
+active heterogeneous factor; use this for two-dimensional integration.}
 
 \item{integrationWeights}{Optional non-negative weights for supplied BLP
 integration points; normalized to sum to one.}

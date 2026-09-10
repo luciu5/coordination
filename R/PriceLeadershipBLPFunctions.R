@@ -15,7 +15,10 @@
 #'  \code{integration = "gauss-hermite"}).
 #'@param nDraws Number of Monte Carlo draws (when
 #'  \code{integration = "monte-carlo"}).
-#'@param consDraws Optional user-supplied BLP integration points.
+#'@param consDraws Optional user-supplied one-dimensional BLP integration points.
+#'@param integrationPoints Optional user-supplied matrix of standardized BLP
+#'  integration points. Each row is one consumer draw and each column is an
+#'  active heterogeneous factor; use this for two-dimensional integration.
 #'@param integrationWeights Optional non-negative weights for supplied BLP
 #'  integration points; normalized to sum to one.
 #'@param slopes For \code{ple.blp}, a list of pre-calibrated BLP demand
@@ -43,6 +46,7 @@ ple.blp <- function(
   nNodes = NULL,
   nDraws = NULL,
   consDraws = NULL,
+  integrationPoints = NULL,
   integrationWeights = NULL,
   slopes,
   control.slopes,
@@ -58,6 +62,10 @@ ple.blp <- function(
   if (!is.list(slopes)) {
     stop("'slopes' must be a list of BLP demand parameters.")
   }
+  stored_rule <- slopes$integration
+  stored_factor_order <- slopes$factorOrder
+  stored_nodes_per_axis <- slopes$nodesPerAxis
+  stored_n_nodes <- slopes$nNodes
   if (!missing(nDraws) && identical(integration, "auto")) {
     ## Preserve the historical meaning of nDraws in the legacy public API.
     integration <- "monte-carlo"
@@ -68,40 +76,105 @@ ple.blp <- function(
   if (!is.null(nNodes) && !identical(integration, "gauss-hermite")) {
     stop("'nNodes' is only valid with integration = 'gauss-hermite'.")
   }
-  if (!is.null(consDraws) &&
-      (!is.null(slopes$consDraws) || !is.null(slopes$draws))) {
+  ## calcMeanval() retains both the canonical matrix and the legacy numeric
+  ## price-draw alias on a fitted multidimensional object.  Treat that
+  ## materialized state as canonical when it is passed back into ple.blp().
+  canonical_points <- !is.null(slopes$integrationPoints) &&
+    isTRUE(slopes$integrationWeightsNormalized)
+  if (canonical_points) {
+    slopes$consDraws <- NULL
+    slopes$draws <- NULL
+  }
+  slopes_points <- if (!is.null(slopes$integrationPoints)) {
+    "integrationPoints"
+  } else {
+    c(
+      if (!is.null(slopes$consDraws)) "consDraws",
+      if (!is.null(slopes$draws)) "draws"
+    )
+  }
+  if (!is.null(integrationPoints) && length(slopes_points)) {
+    stop("BLP integration points were supplied both in 'slopes' and the explicit integration-point argument.")
+  }
+  if (!is.null(consDraws) && length(slopes_points)) {
     stop("BLP integration points were supplied both in 'slopes' and 'consDraws'.")
+  }
+  if (!is.null(integrationPoints) && !is.null(consDraws)) {
+    stop("supply BLP integration points through either 'integrationPoints' or 'consDraws', not both.")
   }
   if (!is.null(integrationWeights) &&
       (!is.null(slopes$integrationWeights) || !is.null(slopes$drawWeights))) {
     stop("BLP integration weights were supplied both in 'slopes' and 'integrationWeights'.")
   }
 
+  if (!is.null(integrationPoints)) slopes$integrationPoints <- integrationPoints
   if (!is.null(consDraws)) slopes$consDraws <- consDraws
   if (!is.null(integrationWeights)) slopes$integrationWeights <- integrationWeights
   if (!is.null(nNodes)) slopes$nNodes <- nNodes
   if (!is.null(nDraws)) slopes$nDraws <- nDraws
-  supplied_points <- if (!is.null(slopes$draws)) slopes$draws else slopes$consDraws
+  supplied_points <- if (!is.null(slopes$integrationPoints)) {
+    slopes$integrationPoints
+  } else if (!is.null(slopes$draws)) {
+    slopes$draws
+  } else {
+    slopes$consDraws
+  }
   if (!is.null(slopes$nDraws) && !is.null(supplied_points) &&
-      slopes$nDraws != length(supplied_points)) {
+      slopes$nDraws != if (is.matrix(supplied_points)) {
+        nrow(supplied_points)
+      } else {
+        length(supplied_points)
+      }) {
     stop("'nDraws' must equal the number of supplied BLP integration points.")
   }
   if (!is.null(slopes$nDraws) && isTRUE(integration_missing) &&
-      is.null(slopes$consDraws) && is.null(slopes$draws)) {
+      is.null(slopes$integrationPoints) && is.null(slopes$consDraws) &&
+      is.null(slopes$draws)) {
     integration <- "monte-carlo"
   }
   slopes$integration <- integration
   integration_result <- calcBLPintegration(slopes)
-  slopes$consDraws <- integration_result$draws
+  ## Keep the canonical antitrust representation: a one-dimensional rule is
+  ## stored as numeric consDraws, while a multidimensional rule is stored as
+  ## matrix integrationPoints.  Passing a matrix through consDraws makes the
+  ## shared antitrust materializer reject it as an ambiguous legacy alias.
+  if (is.null(integration_result$integrationPoints)) {
+    slopes$consDraws <- as.numeric(integration_result$draws)
+    slopes$integrationPoints <- NULL
+  } else {
+    slopes$integrationPoints <- integration_result$integrationPoints
+    slopes$consDraws <- NULL
+  }
+  ## Remove the alternate legacy alias after canonicalization so a supplied
+  ## matrix can never be reinterpreted as one-dimensional draws downstream.
+  slopes$draws <- NULL
   slopes$drawWeights <- integration_result$weights
   slopes$integrationWeights <- integration_result$weights
-  slopes$integration <- integration_result$rule
-  slopes$nNodes <- if (identical(integration_result$rule, "gauss-hermite")) {
-    length(integration_result$draws)
+  slopes$integrationWeightsNormalized <- TRUE
+  reused_rule <- canonical_points && isTRUE(integration_missing) &&
+    length(stored_rule) == 1L &&
+    stored_rule %in% c("gauss-hermite", "monte-carlo", "provided")
+  rule <- if (reused_rule) stored_rule else integration_result$rule
+  factor_order <- if (reused_rule && !is.null(stored_factor_order)) {
+    stored_factor_order
+  } else {
+    integration_result$factorOrder
+  }
+  nodes_per_axis <- if (reused_rule && !is.null(stored_nodes_per_axis)) {
+    stored_nodes_per_axis
+  } else {
+    integration_result$nodesPerAxis
+  }
+  slopes$integration <- rule
+  slopes$factorOrder <- factor_order
+  slopes$nodesPerAxis <- nodes_per_axis
+  slopes$nNodes <- if (identical(rule, "gauss-hermite")) {
+    if (!is.null(nodes_per_axis)) nodes_per_axis else stored_n_nodes
   } else {
     NULL
   }
-  nDraws <- length(integration_result$draws)
+  nDraws <- integration_result$nDraws
+  slopes$nDraws <- nDraws
 
   ## Check post-merger coalition
   ## Logit's parent validity requires a finite margin vector even though
@@ -362,7 +435,8 @@ setMethod(
   }
 )
 
-#' @keywords internal
+#' @rdname calcPriceLeadershipParams-PriceLeadership-method
+#' @export
 setMethod(
   f = "calcPriceLeadershipParams",
   signature = "PriceLeadershipBLP",

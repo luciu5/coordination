@@ -5,12 +5,9 @@
 #' \pkg{antitrust} package.
 #'
 #' @importClassesFrom antitrust Logit LogitBLP Bertrand
-#' @importMethodsFrom antitrust calcPrices calcMargins calcSlopes calcMC
-#'   calcProducerSurplus calcShares calcQuantities ownerToMatrix ownerToVec
-#'   calcMeanval
+#' @importMethodsFrom antitrust calcPrices calcMargins calcSlopes calcMC calcProducerSurplus calcShares calcQuantities ownerToMatrix ownerToVec calcMeanval
 #' @importFrom antitrust calcBLPintegration
-#' @importFrom methods setClass setGeneric setMethod new prototype validObject
-#'   callNextMethod selectMethod
+#' @importFrom methods setClass setGeneric setMethod new prototype validObject callNextMethod selectMethod
 #' @importFrom stats optim
 #' @importFrom BB BBsolve
 #' @importFrom nleqslv nleqslv

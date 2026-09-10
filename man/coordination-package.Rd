@@ -20,6 +20,11 @@ Useful links:
 \author{
 \strong{Maintainer}: Charles Taragin \email{ctaragin+antitrustr@gmail.com}
 
+Authors:
+\itemize{
+  \item Charles Taragin \email{ctaragin+antitrustr@gmail.com}
+}
+
 Other contributors:
 \itemize{
   \item David Benson [contributor]

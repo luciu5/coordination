@@ -243,7 +243,9 @@ setGeneric(
 #' 4. Identify supermarkup and check IC constraints
 #' 5. Estimate firm-specific timing parameters if any IC binds
 #'
-#' @keywords internal
+#' @aliases calcPriceLeadershipParams
+#' @rdname calcPriceLeadershipParams-PriceLeadership-method
+#' @export
 setMethod(
   f = "calcPriceLeadershipParams",
   signature = "PriceLeadership",

@@ -16,6 +16,10 @@ test_that("ple() matches known parity fixture values", {
 test_that("calcSlack, calcSupermarkup, calcPriceLeadershipParams are exported and usable", {
   fit <- fixture_ple()
   expect_true(is.function(calcSlack))
+  expect_true("calcSupermarkup" %in% getNamespaceExports("coordination"))
+  expect_true("calcPriceLeadershipParams" %in% getNamespaceExports("coordination"))
+  expect_true(is.function(calcSupermarkup))
+  expect_true(is.function(calcPriceLeadershipParams))
   expect_warning(slack <- calcSlack(fit, TRUE),
                   "Timing parameter not specified")
   expect_true(all(is.finite(slack)))
