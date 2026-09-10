@@ -136,13 +136,48 @@ BLP, nested Logit, ...) can be analyzed this way.
 
 ## PLE with BLP demand (`PriceLeadershipBLP`)
 
-An earlier internal implementation extended the price leadership model to BLP
-random-coefficients demand (`PriceLeadershipBLP`/`ple.blp()`). That extension
-relied on `antitrust`'s internal (unexported) BLP integration and contraction
-machinery. Rather than duplicate that engine or reach into `antitrust`'s
-private namespace, `PriceLeadershipBLP` is deferred from this release pending
-a small public `antitrust` interface for BLP mean-utility recovery. Standard
-Logit PLE and Grim Trigger are unaffected.
+The price leadership model is also available with BLP random-coefficients
+demand via `ple.blp()`, which returns a `PriceLeadershipBLP` object (extending
+`antitrust`'s `LogitBLP`). Supply pre-calibrated BLP demand parameters in
+`slopes` and choose an integration rule:
+
+```r
+library(antitrust)
+library(coordination)
+
+shares <- c(0.35, 0.25, 0.25, 0.15)
+prices <- c(0.93, 0.88, 1.10, 1.02)
+alpha  <- -5.767013
+
+fit <- ple.blp(
+  prices        = prices,
+  shares        = shares,
+  ownerPre      = c("Bank1", "Bank2", "Bank3", "Fringe"),
+  ownerPost     = c("Bank1", "Bank2", "Bank3", "Fringe"),
+  coalitionPre  = 1:3,
+  coalitionPost = 1:3,
+  insideSize    = 1000,
+  integration   = "gauss-hermite",
+  slopes = list(
+    alphaMean = alpha, alpha = alpha, sigma = 0.5,
+    meanval   = c(0, log(shares[-1] / shares[1]) - alpha * (prices[-1] - prices[1])),
+    sigmaNest = 1
+  )
+)
+
+summary(fit)
+```
+
+This reuses `antitrust`'s BLP machinery through its public API: mean-utility
+recovery via the exported `antitrust::calcMeanval` generic (inherited through
+`LogitBLP`) and integration-point selection via `antitrust::calcBLPintegration`.
+`coordination` does not touch any `antitrust` internals.
+
+Integration rules `"gauss-hermite"` (default for one-dimensional heterogeneity)
+and `"provided"` (caller-supplied points) are deterministic. The
+`"monte-carlo"` rule draws pseudo-random integration points, so reproducing a
+Monte-Carlo fit requires setting the same `RNGkind()` and `set.seed()` before
+the call.
 
 ## References
 
