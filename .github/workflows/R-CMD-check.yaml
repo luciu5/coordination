@@ -47,6 +47,10 @@ jobs:
         shell: Rscript {0}
         run: |
           install.packages("remotes", repos = "https://cloud.r-project.org")
+          Sys.unsetenv(c(
+            "GITHUB_PAT", "GITHUB_TOKEN", "GH_TOKEN",
+            "GITHUB_PAT_GITHUB_COM", "GITHUB_PAT_API_GITHUB_COM"
+          ))
           remotes::install_github(
             paste0("luciu5/antitrust@", Sys.getenv("ANTITRUST_SHA")),
             auth_token = NULL, upgrade = "never", dependencies = TRUE
