@@ -47,27 +47,35 @@ jobs:
         shell: Rscript {0}
         run: |
           install.packages("remotes", repos = "https://cloud.r-project.org")
-          Sys.unsetenv(c(
-            "GITHUB_PAT", "GITHUB_TOKEN", "GH_TOKEN",
-            "GITHUB_PAT_GITHUB_COM", "GITHUB_PAT_API_GITHUB_COM"
-          ))
-          remotes::install_github(
-            paste0("luciu5/antitrust@", Sys.getenv("ANTITRUST_SHA")),
-            auth_token = NULL, upgrade = "never", dependencies = TRUE
-          )
-          desc <- packageDescription("antitrust")
-          installed_sha <- if (is.null(desc$RemoteSha)) "unknown" else desc$RemoteSha
-          line <- paste0("antitrust installed RemoteSha: ", installed_sha)
-          write(line, file = "dependency-shas.txt", append = TRUE)
-          cat(line, "\n")
           expected_sha <- Sys.getenv("ANTITRUST_SHA")
-          if (!identical(installed_sha, expected_sha)) {
+          archive <- tempfile(fileext = ".tar.gz")
+          archive_url <- paste0(
+            "https://codeload.github.com/luciu5/antitrust/tar.gz/",
+            expected_sha
+          )
+          download.file(archive_url, archive, mode = "wb", quiet = TRUE)
+          members <- utils::untar(archive, list = TRUE)
+          top_level <- unique(sub("/.*$", "", members[nzchar(members)]))
+          expected_top_level <- paste0("antitrust-", expected_sha)
+          if (length(top_level) != 1L || !identical(top_level, expected_top_level)) {
             stop(
               paste0(
-                "Installed antitrust RemoteSha (", installed_sha,
-                ") does not match resolved ANTITRUST_SHA (", expected_sha, ")."
+                "Antitrust codeload archive prefix (", paste(top_level, collapse = ", "),
+                ") does not match resolved SHA (", expected_top_level, ")."
               )
             )
+          }
+          extract_dir <- tempfile("antitrust-")
+          dir.create(extract_dir)
+          utils::untar(archive, exdir = extract_dir)
+          source_dir <- file.path(extract_dir, expected_top_level)
+          remotes::install_deps(source_dir, dependencies = TRUE, upgrade = "never")
+          remotes::install_local(source_dir, dependencies = FALSE, upgrade = "never")
+          line <- paste0("antitrust installed from verified codeload SHA: ", expected_sha)
+          write(line, file = "dependency-shas.txt", append = TRUE)
+          cat(line, "\n")
+          if (!identical(sub("^antitrust-", "", top_level), expected_sha)) {
+            stop("Verified antitrust codeload SHA does not match ANTITRUST_SHA.")
           }
 
       - name: Check package
