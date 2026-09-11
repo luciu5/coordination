@@ -49,7 +49,7 @@ jobs:
           install.packages("remotes", repos = "https://cloud.r-project.org")
           remotes::install_github(
             paste0("luciu5/antitrust@", Sys.getenv("ANTITRUST_SHA")),
-            upgrade = "never", dependencies = TRUE
+            auth_token = "", upgrade = "never", dependencies = TRUE
           )
           desc <- packageDescription("antitrust")
           installed_sha <- if (is.null(desc$RemoteSha)) "unknown" else desc$RemoteSha
