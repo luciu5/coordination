@@ -83,6 +83,32 @@ calcSupermarkup(fit, constrained = FALSE)  # unconstrained (full-collusion) supe
 addition to the coordination-specific ones (`calcSlack`, `calcSupermarkup`,
 `calcPriceLeadershipParams`).
 
+## Firm-level Stackelberg Logit
+
+`coordination::stackelberg()` provides a separate noncooperative
+firm-level Stackelberg game for Logit demand. It accepts explicit pre/post
+firm-ID vectors and leader sets, supports Bertrand and Cournot conduct, and
+keeps calibrated demand and baseline costs fixed in `stackelberg_simulate()`.
+The constructor requires unconditional product shares with a positive outside
+share and `normIndex = NA`; `demand = "ces"` is reserved for a later extension.
+
+```r
+fit <- stackelberg(
+  prices = c(10, 12, 11, 9),
+  shares = c(.25, .20, .18, .17),
+  margins = c(.40, .38, .35, .25),
+  ownerPre = c("A", "B", "C", "D"), leadersPre = "A",
+  conduct = "bertrand", insideSize = 1000
+)
+calcMargins(fit, level = TRUE)
+stackelberg_response(fit, method = "implicit")
+```
+
+`stackelberg_followers()` exposes actual price or quantity follower choices,
+while `stackelberg_residuals()` reports reduced leader and follower FOCs.
+This class is independent of both the legacy `antitrust::stackelberg()`
+quantity model and the coordinated `PriceLeadership` model.
+
 ## Grim Trigger sustainability analysis
 
 `calcProducerSurplusGrimTrigger` evaluates whether a coalition of firms

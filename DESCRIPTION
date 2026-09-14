@@ -29,6 +29,7 @@ LazyLoad: yes
 Collate:
     'coordination-package.R'
     'PriceLeadershipClasses.R'
+    'StackelbergLogit.R'
     'PriceLeadershipFunctions.R'
     'PriceLeadershipBLPFunctions.R'
     'GrimTriggerMethods.R'
