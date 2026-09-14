@@ -268,6 +268,9 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
   priceOutsideWasMissing <- missing(priceOutside)
   demand <- match.arg(demand)
   conduct <- match.arg(conduct)
+  if (!is.logical(output) || length(output) != 1L || is.na(output)) {
+    stop("'output' must be one logical value")
+  }
   if (demand == "ces") {
     if (priceOutsideWasMissing) priceOutside <- 1
     return(.stackelberg_ces_constructor(
@@ -303,7 +306,6 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
   if (length(normIndex) != 1L || !is.na(normIndex)) {
     stop("Stackelberg Logit requires an explicit outside good and normIndex=NA")
   }
-  if (length(output) != 1L || is.na(output)) stop("'output' must be one logical value")
   if (length(priceOutside) != 1L || !is.finite(priceOutside) || priceOutside < 0) {
     stop("'priceOutside' must be one finite non-negative value")
   }

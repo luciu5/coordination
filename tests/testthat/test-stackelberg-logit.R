@@ -39,6 +39,14 @@ test_that("negative Logit costs do not invalidate intermediate price FOCs", {
   expect_lt(stackelberg_residuals(fit)$maxNormalized, 2e-10)
 })
 
+test_that("market orientation cannot be silently changed by numeric output", {
+  for (demand in c("logit", "ces")) {
+    expect_error(stackelberg(c(1, 2), c(.2, .3), ownerPre = c("A", "B"),
+      leadersPre = "A", output = 1, demand = demand,
+      control.equ = list(implicitCheck = FALSE)), "output.*logical")
+  }
+})
+
 test_that("tiny Bertrand product shares cannot mask a follower FOC", {
   fit <- stackelberg(c(10, 12, 11, 9), c(.2, .15, .15, 1e-12),
     ownerPre = c("A", "B", "C", "B"), leadersPre = "A", alpha = 2,
