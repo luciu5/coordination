@@ -86,9 +86,10 @@ addition to the coordination-specific ones (`calcSlack`, `calcSupermarkup`,
 ## Firm-level Stackelberg Logit
 
 `coordination::stackelberg()` provides a separate noncooperative
-firm-level Stackelberg game for Logit demand. It accepts explicit pre/post
-firm-ID vectors and leader sets, supports Bertrand and Cournot conduct, and
-keeps calibrated demand and baseline costs fixed in `stackelberg_simulate()`.
+firm-level Stackelberg game for Logit or output-market CES demand. It accepts
+explicit pre/post firm-ID vectors and leader sets, supports Bertrand and
+Cournot conduct, and keeps calibrated demand and baseline costs fixed in
+`stackelberg_simulate()`.
 The constructor requires unconditional product shares with a positive outside
 share and `normIndex = NA`; `demand = "ces"` is reserved for a later extension.
 
@@ -103,6 +104,11 @@ fit <- stackelberg(
 calcMargins(fit, level = TRUE)
 stackelberg_response(fit, method = "implicit")
 ```
+
+For CES, pass `demand = "ces"`, a structural `gamma > 1`, and a positive
+`priceOutside`. CES shares are unconditional revenue shares and `insideSize`
+is inside expenditure. CES calibration uses all usable positive observed
+margins when `gamma` is omitted; CES input markets are not supported.
 
 `stackelberg_followers()` exposes actual price or quantity follower choices,
 while `stackelberg_residuals()` reports reduced leader and follower FOCs.

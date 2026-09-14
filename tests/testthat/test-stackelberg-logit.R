@@ -14,6 +14,14 @@ test_that("Stackelberg Logit calibrates audited Bertrand equations", {
   expect_equal(unname(calcMC(fit, FALSE)), unname(fit@mcPost))
   expect_equal(unname(calcShares(fit, TRUE)), unname(fit@shares), tolerance = 1e-10)
   expect_equal(unname(calcQuantities(fit, TRUE)), unname(fit@mktSize * fit@shares), tolerance = 1e-10)
+  fast <- stackelberg(
+    prices = c(10, 12, 11, 9), shares = c(.25, .20, .18, .17),
+    margins = c(.40, .38, .35, .25), ownerPre = c("A", "B", "C", "D"),
+    leadersPre = "A", insideSize = 1000,
+    control.equ = list(implicitCheck = FALSE)
+  )
+  expect_equal(fast@diagnostics$implicit$statusPre, "not-run")
+  expect_true(all(is.na(fast@diagnostics$implicit$pre)))
 })
 
 test_that("Cournot and input sign cases retain positive actions", {
@@ -212,6 +220,11 @@ test_that("merger and cost shocks require explicit post roles", {
   expect_equal(out@mcPost, fit@mcPre * c(1.1, 1, 1, 1))
   expect_true(all(is.finite(out@pricePost)))
   expect_lt(stackelberg_residuals(out, FALSE)$max, 1e-6)
+  exit <- stackelberg_simulate(fit, subset = c(TRUE, TRUE, FALSE, TRUE))
+  expect_equal(unname(calcPrices(exit, FALSE, subset = rep(TRUE, 4))),
+               unname(fit@pricePre), tolerance = 1e-7)
+  expect_equal(unname(calcPrices(exit, FALSE, subset = rep(TRUE, 4), method = "implicit")),
+               unname(fit@pricePre), tolerance = 1e-6)
 })
 
 test_that("unsupported normalizations and control matrices are explicit", {
@@ -221,7 +234,13 @@ test_that("unsupported normalizations and control matrices are explicit", {
   expect_error(stackelberg(c(10, 12), c(.2, .18), c(.2, .2),
                            ownerPre = diag(2), leadersPre = "A"),
                "partial-control matrices")
+  ces <- stackelberg(c(10, 12), c(.2, .18), c(.4, .4),
+                     ownerPre = c("A", "B"), leadersPre = "A",
+                     demand = "ces", gamma = 2, priceOutside = 2,
+                     insideSize = 100)
+  expect_s4_class(ces, "StackelbergCES")
   expect_error(stackelberg(c(10, 12), c(.2, .18), c(.2, .2),
                            ownerPre = c("A", "B"), leadersPre = "A",
-                           demand = "ces"), "reserved for a later")
+                           demand = "ces", gamma = 2, output = FALSE,
+                           priceOutside = 2), "output markets only")
 })

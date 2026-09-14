@@ -4,11 +4,12 @@
 #' demand and cost calibration infrastructure provided by the
 #' \pkg{antitrust} package.
 #'
-#' @importClassesFrom antitrust Logit LogitBLP Bertrand
+#' @importClassesFrom antitrust Logit LogitBLP Bertrand CES
 #' @importMethodsFrom antitrust calcPrices calcMargins calcSlopes calcMC calcProducerSurplus calcShares calcQuantities ownerToMatrix ownerToVec calcMeanval
 #' @importFrom antitrust calcBLPintegration
 #' @importFrom methods setClass setGeneric setMethod new prototype validObject callNextMethod selectMethod
-#' @importFrom stats optim
+#' @importFrom stats optim setNames
+#' @importFrom utils modifyList
 #' @importFrom BB BBsolve
 #' @importFrom nleqslv nleqslv
 #' @importFrom numDeriv genD

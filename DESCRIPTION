@@ -23,6 +23,8 @@ Description: Coordinated-effects models for merger analysis built on the
     Miller, Sheu & Weinberg (2023). Also implements Grim Trigger
     sustainability analysis for evaluating whether a coalition of firms
     playing Bertrand can sustain collusive pricing under a repeated game.
+    It also provides separate noncooperative firm-level Stackelberg Logit and
+    output-market CES price/quantity games.
 URL: https://github.com/luciu5/coordination
 License: CC0
 LazyLoad: yes
@@ -30,6 +32,7 @@ Collate:
     'coordination-package.R'
     'PriceLeadershipClasses.R'
     'StackelbergLogit.R'
+    'StackelbergCES.R'
     'PriceLeadershipFunctions.R'
     'PriceLeadershipBLPFunctions.R'
     'GrimTriggerMethods.R'

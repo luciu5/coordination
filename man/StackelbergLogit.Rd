@@ -1,5 +1,6 @@
 \name{StackelbergLogit}
 \alias{StackelbergLogit-class}
+\alias{StackelbergCES-class}
 \alias{stackelberg}
 \alias{stackelberg_followers}
 \alias{stackelberg_response}
@@ -9,11 +10,15 @@
 \alias{calcMargins,StackelbergLogit-method}
 \alias{calcMC,StackelbergLogit-method}
 \alias{calcPrices,StackelbergLogit-method}
-\title{Firm-level Stackelberg Logit games}
+\alias{calcSlopes,StackelbergCES-method}
+\alias{calcMargins,StackelbergCES-method}
+\alias{calcMC,StackelbergCES-method}
+\alias{calcPrices,StackelbergCES-method}
+\title{Firm-level Stackelberg Logit and CES games}
 \description{
   Constructs and analyzes a noncooperative firm-level Stackelberg game with
-  flat Logit demand.  The class extends \code{antitrust}'s \code{Logit}
-  class.  This API is separate from the legacy linear/log-linear
+  Logit or CES demand.  \code{StackelbergLogit} and \code{StackelbergCES}
+  extend \code{antitrust}'s corresponding demand classes.  This API is separate from the legacy linear/log-linear
   \code{antitrust::stackelberg} constructor and from coordination's
   PriceLeadership model.
 }
@@ -26,7 +31,8 @@ stackelberg(prices, shares, margins = rep(NA_real_, length(prices)), ownerPre,
   priceStart = prices, labels = paste0("Prod", seq_along(prices)),
   weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
   control.slopes = list(), control.equ = list(), ...)
-stackelberg_followers(object, leaderActions, preMerger = TRUE, start = NULL)
+stackelberg_followers(object, leaderActions, preMerger = TRUE, start = NULL,
+  subset = NULL)
 stackelberg_response(object, preMerger = TRUE,
   method = c("analytic", "implicit"))
 stackelberg_residuals(object, preMerger = TRUE, prices = NULL,
@@ -45,21 +51,25 @@ stackelberg_simulate(object,
   \item{leadersPre, leadersPost}{Firm IDs that choose in the first stage.
     Changed post ownership requires an explicit \code{leadersPost}.}
   \item{conduct}{Either \code{"bertrand"} or \code{"cournot"}.}
-  \item{demand}{Currently only \code{"logit"}; CES is reserved for a later
-    extension.}
-  \item{output}{Whether the market is an output market; input margins use the
-    signed inverse demand convention internally.}
-  \item{insideSize}{Observed inside quantity used to scale product quantities.}
-  \item{normIndex}{Must be \code{NA}; this API uses a positive outside share.}
-  \item{priceOutside}{Fixed outside-good price.}
+  \item{demand}{Either \code{"logit"} or output-market \code{"ces"}.}
+  \item{output}{Logical output-market indicator. CES requires \code{TRUE};
+    Logit retains its output/input sign convention.}
+  \item{insideSize}{Observed inside quantity for Logit and inside expenditure
+    (nominal market size) for CES.}
+  \item{normIndex}{Must be \code{NA}; this API uses an explicit outside good.}
+  \item{priceOutside}{Fixed outside-good price; CES defaults to 1 and requires
+    a strictly positive value when supplied.}
   \item{mcDelta}{Proportional marginal-cost/value changes for the post state.}
   \item{subset}{Products active in the post state.}
   \item{priceStart}{Positive starting prices for equilibrium solving.}
   \item{labels}{Product labels.}
   \item{alpha}{Optional positive absolute Logit price coefficient.}
-  \item{gamma}{Reserved CES elasticity argument; unsupported for Logit.}
+  \item{gamma}{Optional CES elasticity, strictly greater than one. If omitted,
+    it is calibrated from all usable positive observed margins.}
   \item{weights}{Nonnegative product weights used by WLS calibration.}
-  \item{control.slopes, control.equ}{Optional named solver-control lists.}
+  \item{control.slopes, control.equ}{Optional named solver-control lists.
+    Set \code{control.equ$implicitCheck = FALSE} to skip the optional nested
+    implicit equilibrium diagnostic.}
   \item{object}{A \code{StackelbergLogit} object.}
   \item{leaderActions}{Prices for Bertrand or quantities for Cournot, one per
     active leader product.}
@@ -71,7 +81,8 @@ stackelberg_simulate(object,
   \item{...}{Reserved solver and counterfactual arguments.}
 }
 \value{
-  \code{stackelberg} returns a \code{StackelbergLogit} object.  The follower,
+  \code{stackelberg} returns a \code{StackelbergLogit} or \code{StackelbergCES}
+  object.  The follower,
   response, and residual helpers return lists or matrices containing full
   choices, prices, quantities, responses, and diagnostics.
 }
