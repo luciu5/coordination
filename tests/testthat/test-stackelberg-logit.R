@@ -24,6 +24,34 @@ test_that("Stackelberg Logit calibrates audited Bertrand equations", {
   expect_true(all(is.na(fast@diagnostics$implicit$pre)))
 })
 
+test_that("negative Logit costs do not invalidate intermediate price FOCs", {
+  prices <- c(.252099171767981, .362680180329188, .612603979014707,
+              .889185124330740, 1.55926583951203, 13.6268863289245)
+  shares <- c(.297826644979752, .241984149046049, .00915200936544982,
+              .0597560160387375, .314270202149475, .0470109784205375)
+  fit <- stackelberg(prices, shares, ownerPre = c("f2", "f3", "f3", "f1", "f1", "f3"),
+    leadersPre = "f3", conduct = "cournot", alpha = 2.41925764285261,
+    insideSize = 464.014635579661, priceOutside = .31818110961467,
+    control.equ = list(implicitCheck = FALSE))
+  expect_true(any(fit@mcPre < 0))
+  expect_lt(fit@diagnostics$baselineReproductionRelative, 2e-7)
+  expect_equal(unname(fit@pricePre), prices, tolerance = 1e-10)
+  expect_lt(stackelberg_residuals(fit)$maxNormalized, 2e-10)
+})
+
+test_that("tiny Bertrand product shares cannot mask a follower FOC", {
+  fit <- stackelberg(c(10, 12, 11, 9), c(.2, .15, .15, 1e-12),
+    ownerPre = c("A", "B", "C", "B"), leadersPre = "A", alpha = 2,
+    insideSize = 1000, control.equ = list(implicitCheck = FALSE))
+  ff <- stackelberg_followers(fit, 10, start = c(70, 80, 90))
+  expect_equal(ff$prices, unname(fit@pricePre), tolerance = 1e-8)
+  expect_lt(max(abs(ff$normalizedResiduals)), 2e-10)
+  # Each individual product's normalized raw profit derivative must vanish,
+  # even when its raw derivative is small because its quantity is tiny.
+  normalized <- .sk_raw_foc(fit, ff$prices, TRUE) / ff$quantities
+  expect_lt(max(abs(normalized[ff$followerProducts])), 2e-10)
+})
+
 test_that("Cournot and input sign cases retain positive actions", {
   for (conduct in c("bertrand", "cournot")) {
     fit <- stackelberg(

@@ -482,9 +482,13 @@ setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
   }
   foc <- function(z) {
     p <- exp(z)
+    if (any(!is.finite(p)) || any(p <= 0)) return(rep(1e6, length(p)))
     tg <- try(target(p), silent = TRUE)
-    if (inherits(tg, "try-error") || any(!is.finite(tg)) || any(tg <= 0)) return(rep(1e6, length(p)))
-    log(p / tg)
+    if (inherits(tg, "try-error") || any(!is.finite(tg))) return(rep(1e6, length(p)))
+    ## Negative cost/value primitives can imply a negative target during
+    ## intermediate steps even when the equilibrium price is positive. The
+    ## FOC remains well defined there; a logarithm of the target does not.
+    1 - tg / p
   }
   ctl <- object@control.equ
   maxit <- as.integer(ctl$maxit %||% 300L)
@@ -873,10 +877,22 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
       .sk_raw_foc(this, q[subset], preMerger, subset)[match(followerProducts, which(subset))]
     }
   }
-  ## Solve using a payoff-orientation-free equation; retain fixedRaw for
-  ## diagnostics below.  Multiplying all follower rows by a common sign does
-  ## not change the implicit reaction.
-  fixed <- function(z) fixedRaw(z) / sigma
+  ## Divide the price profit gradient by sigma*q_j algebraically. Tiny shares
+  ## otherwise make the raw gradient appear zero at arbitrarily high prices.
+  ## This is the same FOC, with no division by an underflowed quantity.
+  fixed <- function(z) {
+    p <- rep(NA_real_, length(subset))
+    p[leaderProducts] <- leaderActions
+    p[followerProducts] <- exp(z)
+    if (any(!is.finite(p[subset]))) return(rep(1e6, length(followerProducts)))
+    this <- object
+    if (!preMerger) this@subset <- subset
+    if (preMerger) this@pricePre <- p else this@pricePost <- p
+    s <- calcShares(this, preMerger, revenue = FALSE)
+    mu <- p - st$costs
+    weightedMargin <- tapply(mu[subset] * s[subset], st$owner[subset], sum)
+    1 + .sk_beta(object) * (mu[followerProducts] - weightedMargin[st$owner[followerProducts]])
+  }
   sol <- try(nleqslv::nleqslv(log(start), function(z) fixed(z), method = "Broyden",
                               control = list(ftol = 1e-14, xtol = 1e-14, maxit = 400L)), silent = TRUE)
   if (inherits(sol, "try-error") || any(!is.finite(sol$x)) ||
@@ -916,9 +932,13 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
     r <- fixed(sol$x)
     choices <- q
   }
-  if (max(abs(r), na.rm = TRUE) > 1e-6) stop("follower equilibrium residual exceeds tolerance")
+  normalized <- fixed(sol$x)
+  if (any(!is.finite(normalized)) || max(abs(normalized)) > 2e-10) {
+    stop("follower equilibrium residual exceeds tolerance")
+  }
   list(choices = choices, prices = p, quantities = q,
        shares = q / object@mktSize, residuals = r,
+       normalizedResiduals = normalized,
        leaderProducts = leaderProducts, followerProducts = followerProducts,
        converged = TRUE)
 }
