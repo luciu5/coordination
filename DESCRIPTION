@@ -33,6 +33,7 @@ Collate:
     'PriceLeadershipClasses.R'
     'StackelbergLogit.R'
     'StackelbergCES.R'
+    'CoreFringe.R'
     'PriceLeadershipFunctions.R'
     'PriceLeadershipBLPFunctions.R'
     'GrimTriggerMethods.R'
