@@ -210,10 +210,14 @@ setClass(
 .cf_state <- function(object, preMerger, subset = NULL) {
   n <- length(object@shares); if (is.null(subset)) subset <- if (preMerger) rep(TRUE, n) else object@subset
   subset <- .cf_subset(subset, n)
-  if (preMerger) list(subset = subset, owner = object@firmOwnerPre, core = object@corePre,
-                      prices = object@pricePre, costs = object@mcPre)
-  else list(subset = subset, owner = object@firmOwnerPost, core = object@corePost,
-            prices = object@pricePost, costs = object@mcPost)
+  state <- if (preMerger) {
+    list(subset = subset, owner = object@firmOwnerPre, core = object@corePre,
+         prices = object@pricePre, costs = object@mcPre)
+  } else {
+    list(subset = subset, owner = object@firmOwnerPost, core = object@corePost,
+         prices = object@pricePost, costs = object@mcPost)
+  }
+  c(state, .cf_roles(state$owner, state$core, subset))
 }
 
 .cf_logit_root <- function(object, preMerger, subset, start = NULL) {
@@ -416,9 +420,11 @@ setMethod("calcMargins", "CoreFringeCES", function(object, preMerger = TRUE, lev
 })
 
 setMethod("calcPrices", "CoreFringeLogit", function(object, preMerger = TRUE, isMax = FALSE, subset, ...) {
+  if (isTRUE(isMax)) stop("isMax = TRUE is not implemented for CoreFringeLogit")
   if (missing(subset)) subset <- if (preMerger) rep(TRUE, length(object@shares)) else object@subset; subset <- .cf_subset(subset, length(object@shares)); p <- .cf_logit_root(object, preMerger, subset); out <- rep(NA_real_, length(object@shares)); out[subset] <- p; if (preMerger) out[!subset] <- object@prices[!subset]; names(out) <- object@labels; out
 })
 setMethod("calcPrices", "CoreFringeCES", function(object, preMerger = TRUE, isMax = FALSE, subset, ...) {
+  if (isTRUE(isMax)) stop("isMax = TRUE is not implemented for CoreFringeCES")
   if (missing(subset)) subset <- if (preMerger) rep(TRUE, length(object@shares)) else object@subset; subset <- .cf_subset(subset, length(object@shares)); p <- .cf_ces_root(object, preMerger, subset); out <- rep(NA_real_, length(object@shares)); out[subset] <- p; if (preMerger) out[!subset] <- object@prices[!subset]; names(out) <- object@labels; out
 })
 
@@ -468,5 +474,5 @@ core_fringe_simulate <- function(object, ownerPost = object@firmOwnerPost, coreP
   subset <- .cf_subset(subset, n); mcDelta <- as.numeric(mcDelta); if (length(mcDelta) != n || any(!is.finite(mcDelta))) stop("mcDelta must be a finite vector matching prices")
   out <- object; out@firmOwnerPost <- ownerPost; out@corePost <- corePost; out@ownerPost <- .cf_owner_matrix(ownerPost); out@subset <- subset; out@mcDelta <- mcDelta; out@mcPost <- object@mcPre * (1 + mcDelta)
   if (any(!is.finite(out@mcPost[subset]) | out@mcPost[subset] <= 0)) stop("post marginal costs must be finite and positive on active products")
-  out@pricePost <- calcPrices(out, FALSE, subset = subset); out@diagnostics$ownerPost <- ownerPost; out@diagnostics$corePost <- corePost; out@diagnostics$mcDelta <- mcDelta; out@diagnostics$subset <- subset; out@diagnostics$solverStatus$post <- "converged"; out@diagnostics$counterfactual <- core_fringe_residuals(out, FALSE); out@diagnostics$residualsPost <- out@diagnostics$counterfactual; out@diagnostics$impliedMarginsPost <- calcMargins(out, FALSE); out@diagnostics$rolesPost <- out@diagnostics$counterfactual$activeRoles; out@diagnostics$maxCoreFOCResidualPost <- out@diagnostics$counterfactual$maxCoreFOCResidual; out@diagnostics$maxFringeFOCResidualPost <- out@diagnostics$counterfactual$maxFringeFOCResidual; out@diagnostics$maxCoreFOCResiduals <- c(pre = out@diagnostics$maxCoreFOCResidualPre, post = out@diagnostics$maxCoreFOCResidualPost); out@diagnostics$maxFringeFOCResiduals <- c(pre = out@diagnostics$maxFringeFOCResidualPre, post = out@diagnostics$maxFringeFOCResidualPost); out
+  out@pricePost <- calcPrices(out, FALSE, subset = subset); out@diagnostics$ownerPost <- ownerPost; out@diagnostics$corePost <- corePost; out@diagnostics$mcDelta <- mcDelta; out@diagnostics$subset <- subset; out@diagnostics$solverStatus$post <- "converged"; out@diagnostics$counterfactual <- core_fringe_residuals(out, FALSE); out@diagnostics$residualsPost <- out@diagnostics$counterfactual; out@diagnostics$impliedMarginsPost <- calcMargins(out, FALSE); out@diagnostics$rolesPost <- out@diagnostics$counterfactual$activeRoles; out@diagnostics$activeRoles <- out@diagnostics$rolesPost; out@diagnostics$maxCoreFOCResidualPost <- out@diagnostics$counterfactual$maxCoreFOCResidual; out@diagnostics$maxFringeFOCResidualPost <- out@diagnostics$counterfactual$maxFringeFOCResidual; out@diagnostics$maxCoreFOCResiduals <- c(pre = out@diagnostics$maxCoreFOCResidualPre, post = out@diagnostics$maxCoreFOCResidualPost); out@diagnostics$maxFringeFOCResiduals <- c(pre = out@diagnostics$maxFringeFOCResidualPre, post = out@diagnostics$maxFringeFOCResidualPost); out
 }
