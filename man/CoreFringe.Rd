@@ -28,7 +28,8 @@ core_fringe(prices, shares, margins = rep(NA_real_, length(prices)), ownerPre,
   mcDelta = rep(0, length(prices)), subset = rep(TRUE, length(prices)),
   priceStart = prices, labels = paste0("Prod", seq_along(prices)),
   weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
-  control.slopes = list(), control.equ = list(), ...)
+  control.slopes = list(), control.equ = list(),
+  price_domain = c("positive", "real"), ...)
 core_fringe_simulate(object, ownerPost = object@firmOwnerPost,
   corePost = NULL, mcDelta = object@mcDelta, subset = object@subset, ...)
 core_fringe_residuals(object, preMerger = TRUE, prices = NULL)
@@ -60,6 +61,10 @@ core_fringe_residuals(object, preMerger = TRUE, prices = NULL)
   \item{weights}{Nonnegative weights for margin calibration.}
   \item{alpha}{Optional positive absolute Logit price coefficient.}
   \item{gamma}{Optional CES elasticity greater than one.}
+  \item{price_domain}{Rate domain. The default \code{"positive"} preserves
+    the existing solvers. \code{"real"} is supported only for input Logit
+    Cournot games and permits finite zero or negative counterfactual rates;
+    CES and Bertrand combinations are rejected.}
   \item{control.slopes,control.equ}{Optional named calibration and solver
     controls.}
   \item{object}{A \code{CoreFringeLogit} or \code{CoreFringeCES} object.}

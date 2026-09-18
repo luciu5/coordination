@@ -111,8 +111,11 @@ setClass(
 
 .cf_logit_shares <- function(object, prices, subset) {
   n <- length(object@shares); p <- as.numeric(prices)
-  if (length(p) != n || any(!is.finite(p[subset])) || any(p[subset] <= 0))
-    stop("Logit prices must be finite and positive on active products")
+  allowReal <- .coordination_real_object(object)
+  if (length(p) != n || any(!is.finite(p[subset])) ||
+      (!allowReal && any(p[subset] <= 0)))
+    stop(if (allowReal) "Logit prices must be finite on active products" else
+      "Logit prices must be finite and positive on active products")
   beta <- as.numeric(object@slopes$alpha); d <- as.numeric(object@slopes$meanval)
   if (length(beta) != 1L || !is.finite(beta) || length(d) != n) stop("Logit slopes are unavailable")
   u <- d[subset] + beta * (p[subset] - object@priceOutside)
@@ -243,7 +246,10 @@ setClass(
                               control = list(ftol = tol, xtol = tol, maxit = maxit)), silent = TRUE)
   z <- if (!inherits(sol, "try-error") && is.finite(sol$termcd) && sol$termcd <= 2) sol$x else NULL
   if (is.null(z)) {
-    bb <- try(BB::BBsolve(log(start), foc, quiet = TRUE, control = ctl), silent = TRUE)
+    bb <- try(BB::BBsolve(
+      log(start), foc, quiet = TRUE,
+      control = .coordination_solver_control(ctl)
+    ), silent = TRUE)
     if (!inherits(bb, "try-error") && is.finite(bb$convergence) && bb$convergence == 0) z <- bb$par
   }
   if (is.null(z) || any(!is.finite(z))) stop("CoreFringe Logit price equilibrium solver failed")
@@ -256,6 +262,33 @@ setClass(
   }
   p <- exp(z); if (any(!is.finite(p)) || max(abs(foc(z)), na.rm = TRUE) > 2e-9)
     stop("CoreFringe Logit price equilibrium residual exceeds tolerance")
+  p
+}
+
+.cf_logit_real_root <- function(object, preMerger, subset) {
+  st <- .cf_state(object, preMerger, subset)
+  z <- .coordination_real_quantity_state(
+    object, st$costs, st$owner, st$core, subset, game = "core_fringe"
+  )
+  p <- z$prices[subset]
+  full <- st$prices
+  full[subset] <- p
+  tmp <- object
+  if (!.coordination_real_object(tmp)) {
+    tmp@control.equ <- .coordination_set_price_domain(
+      tmp@control.equ, "real"
+    )
+  }
+  if (preMerger) tmp@pricePre <- full else tmp@pricePost <- full
+  dollar <- as.numeric(calcMargins(tmp, preMerger = preMerger, level = TRUE))
+  price_foc <- p - st$costs[subset] + dollar[subset]
+  if (any(!is.finite(price_foc)) || max(abs(price_foc)) > 2e-10) {
+    stop("CoreFringe real Logit Cournot price FOC exceeds tolerance")
+  }
+  diag <- core_fringe_residuals(tmp, preMerger)
+  if (!is.finite(diag$max) || diag$max > 2e-7) {
+    stop("CoreFringe real Logit Cournot residual exceeds tolerance")
+  }
   p
 }
 
@@ -274,7 +307,14 @@ setClass(
   if (!is.finite(maxit) || maxit < 20) maxit <- 500L; if (!is.finite(tol) || tol <= 0) tol <- 1e-11
   sol <- try(nleqslv::nleqslv(log(start), foc, method = "Broyden", control = list(ftol = tol, xtol = tol, maxit = maxit)), silent = TRUE)
   z <- if (!inherits(sol, "try-error") && is.finite(sol$termcd) && sol$termcd <= 2) sol$x else NULL
-  if (is.null(z)) { bb <- try(BB::BBsolve(log(start), foc, quiet = TRUE, control = ctl), silent = TRUE); if (!inherits(bb, "try-error") && is.finite(bb$convergence) && bb$convergence == 0) z <- bb$par }
+  if (is.null(z)) {
+    bb <- try(BB::BBsolve(
+      log(start), foc, quiet = TRUE,
+      control = .coordination_solver_control(ctl)
+    ), silent = TRUE)
+    if (!inherits(bb, "try-error") && is.finite(bb$convergence) &&
+        bb$convergence == 0) z <- bb$par
+  }
   if (is.null(z) || any(!is.finite(z))) stop("CoreFringe CES price equilibrium solver failed")
   for (i in seq_len(8L)) { rr <- foc(z); if (all(is.finite(rr)) && max(abs(rr)) <= 1e-12) break; J <- try(numDeriv::jacobian(foc, z), silent = TRUE); dz <- if (!inherits(J, "try-error")) try(solve(J, -rr), silent = TRUE) else structure("bad", class = "try-error"); if (inherits(dz, "try-error") || any(!is.finite(dz))) break; old <- sum(rr^2); step <- 1; repeat { zn <- z + step * dz; rn <- foc(zn); if (all(is.finite(rn)) && sum(rn^2) <= old) { z <- zn; break }; step <- step / 2; if (step < 1 / 128) break } }
   p <- exp(z); if (any(!is.finite(p)) || max(abs(foc(z)), na.rm = TRUE) > 2e-9) stop("CoreFringe CES price equilibrium residual exceeds tolerance")
@@ -284,12 +324,17 @@ setClass(
 .cf_constructor <- function(kind, prices, shares, margins, ownerPre, ownerPost, corePre,
                              corePost, conduct, output, insideSize, normIndex, priceOutside,
                              mcDelta, subset, priceStart, labels, weights, alpha, gamma,
-                             control.slopes, control.equ, ownerPostMissing, corePostMissing, dots) {
+                             control.slopes, control.equ, ownerPostMissing, corePostMissing,
+                             price_domain, dots) {
   n <- length(prices); z <- .cf_validate_inputs(prices, shares, margins, n)
   prices <- z$prices; shares <- z$shares; margins <- z$margins
+  price_domain <- .coordination_validate_price_domain(
+    price_domain, kind, output, conduct
+  )
   if (length(dots)) stop("unsupported core-fringe arguments: ", paste(names(dots), collapse = ", "))
   .cf_stop_matrix(control.slopes, "control.slopes")
   .cf_stop_matrix(control.equ, "control.equ")
+  control.equ <- .coordination_set_price_domain(control.equ, price_domain)
   if (length(normIndex) != 1L || !is.na(normIndex)) stop("core-fringe requires normIndex=NA and an explicit outside good")
   if (!is.finite(insideSize) || length(insideSize) != 1L || insideSize <= 0) stop("insideSize must be positive")
   ownerPre <- .cf_ids(ownerPre, "ownerPre", n); ownerPost <- .cf_ids(ownerPost, "ownerPost", n)
@@ -314,7 +359,8 @@ setClass(
       insideSize = insideSize, output = isTRUE(output), mcDelta = mcDelta, subset = subset, weights = weights,
       priceOutside = priceOutside, priceStart = priceStart, shareInside = sum(shares), mktSize = insideSize / sum(shares), labels = labels,
       conduct = conduct, corePre = corePre, corePost = corePost, firmOwnerPre = ownerPre, firmOwnerPost = ownerPost,
-      diagnostics = list(observedMargins = margins), alphaFixed = if (is.null(alpha)) NA_real_ else as.numeric(alpha)))
+      diagnostics = list(observedMargins = margins, price_domain = price_domain),
+      alphaFixed = if (is.null(alpha)) NA_real_ else as.numeric(alpha)))
     if (length(control.slopes)) result@control.slopes <- control.slopes; if (length(control.equ)) result@control.equ <- control.equ
     result <- calcSlopes(result); a <- result@diagnostics$demandparam
     hp <- .cf_logit_h(shares, ownerPre, corePre, conduct, rep(TRUE, n))$h
@@ -350,7 +396,9 @@ setClass(
     diversion = matrix(NA_real_, n, n), normIndex = NA_real_, ownerPre = .cf_owner_matrix(ownerPre), ownerPost = .cf_owner_matrix(ownerPost), insideSize = insideSize,
     output = TRUE, mcDelta = mcDelta, subset = subset, weights = weights, priceOutside = priceOutside, priceStart = priceStart,
     shareInside = sum(shares), mktSize = insideSize / sum(shares), labels = labels, conduct = conduct, corePre = corePre, corePost = corePost,
-    firmOwnerPre = ownerPre, firmOwnerPost = ownerPost, diagnostics = list(observedMargins = margins), gammaFixed = if (is.null(gamma)) NA_real_ else as.numeric(gamma)))
+    firmOwnerPre = ownerPre, firmOwnerPost = ownerPost,
+    diagnostics = list(observedMargins = margins, price_domain = price_domain),
+    gammaFixed = if (is.null(gamma)) NA_real_ else as.numeric(gamma)))
   if (length(control.slopes)) result@control.slopes <- control.slopes; if (length(control.equ)) result@control.equ <- control.equ
   result <- calcSlopes(result); g <- result@diagnostics$demandparam; mm <- .cf_ces_margins(shares, ownerPre, corePre, conduct, g, rep(TRUE, n))$margins
   result@mcPre <- prices * (1 - mm); if (any(!is.finite(result@mcPre) | result@mcPre <= 0)) stop("baseline CES marginal costs must be finite and positive")
@@ -385,13 +433,15 @@ core_fringe <- function(prices, shares, margins = rep(NA_real_, length(prices)),
                         mcDelta = rep(0, length(prices)), subset = rep(TRUE, length(prices)),
                         priceStart = prices, labels = paste0("Prod", seq_along(prices)),
                         weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
-                        control.slopes = list(), control.equ = list(), ...) {
+                        control.slopes = list(), control.equ = list(),
+                        price_domain = c("positive", "real"), ...) {
   demand <- match.arg(demand); conduct <- match.arg(conduct); ownerPostMissing <- missing(ownerPost); corePostMissing <- missing(corePost)
   if (!is.logical(output) || length(output) != 1L || is.na(output)) stop("'output' must be one logical value")
   if (is.null(priceOutside)) priceOutside <- if (demand == "ces") 1 else 0
   .cf_constructor(demand, prices, shares, margins, ownerPre, ownerPost, corePre, corePost, conduct, output,
                   insideSize, normIndex, priceOutside, mcDelta, subset, priceStart, labels, weights, alpha, gamma,
-                  control.slopes, control.equ, ownerPostMissing, corePostMissing, list(...))
+                  control.slopes, control.equ, ownerPostMissing, corePostMissing,
+                  .coordination_price_domain(price_domain), list(...))
 }
 
 setMethod("calcSlopes", "CoreFringeLogit", function(object, ...) {
@@ -413,15 +463,74 @@ setMethod("calcMC", "CoreFringeLogit", function(object, preMerger = TRUE) { z <-
 setMethod("calcMC", "CoreFringeCES", function(object, preMerger = TRUE) { z <- if (preMerger) object@mcPre else object@mcPost; if (!length(z)) stop("CoreFringe marginal costs are not initialized"); names(z) <- object@labels; z })
 
 setMethod("calcMargins", "CoreFringeLogit", function(object, preMerger = TRUE, level = FALSE) {
-  st <- .cf_state(object, preMerger); d <- .cf_logit_shares(object, st$prices, st$subset); a <- abs(object@slopes$alpha); out <- .cf_logit_h(d, st$owner, st$core, object@conduct, st$subset)$h / (a * st$prices); out[!st$subset] <- NA_real_; if (level) out <- out * st$prices; names(out) <- object@labels; out
+  st <- .cf_state(object, preMerger)
+  d <- .cf_logit_shares(object, st$prices, st$subset)
+  a <- abs(object@slopes$alpha)
+  h <- .cf_logit_h(d, st$owner, st$core, object@conduct, st$subset)$h
+  dollar <- h / a
+  out <- if (level) dollar else {
+    ans <- rep(NA_real_, length(st$prices))
+    ok <- st$subset & is.finite(st$prices) & st$prices != 0
+    ans[ok] <- dollar[ok] / st$prices[ok]
+    ans
+  }
+  out[!st$subset] <- NA_real_
+  names(out) <- object@labels
+  if (.coordination_real_object(object) ||
+      any(st$prices[st$subset] <= 0)) {
+    attr(out, "diagnostics") <- list(
+      normalized_undefined_zero = st$subset & st$prices == 0,
+      signed_negative_price = st$subset & st$prices < 0,
+      dollar_margin = dollar
+    )
+  }
+  out
 })
 setMethod("calcMargins", "CoreFringeCES", function(object, preMerger = TRUE, level = FALSE) {
   st <- .cf_state(object, preMerger); d <- .cf_ces_demand(object, st$prices, st$subset); out <- .cf_ces_margins(d$revenue, st$owner, st$core, object@conduct, object@slopes$gamma, st$subset)$margins; out[!st$subset] <- NA_real_; if (level) out <- out * st$prices; names(out) <- object@labels; out
 })
 
+setMethod("calcShares", "CoreFringeLogit", function(object, preMerger = TRUE,
+                                                    revenue = FALSE, ...) {
+  if (isTRUE(revenue)) {
+    st <- .cf_state(object, preMerger)
+    if (any(st$prices[st$subset] <= 0)) {
+      out <- rep(NA_real_, length(object@shares))
+      names(out) <- object@labels
+      attr(out, "diagnostics") <- list(
+        revenue_share_undefined = st$subset,
+        nonpositive_active_price = st$subset & st$prices <= 0
+      )
+      return(out)
+    }
+  }
+  callNextMethod()
+})
+
 setMethod("calcPrices", "CoreFringeLogit", function(object, preMerger = TRUE, isMax = FALSE, subset, ...) {
   if (isTRUE(isMax)) stop("isMax = TRUE is not implemented for CoreFringeLogit")
-  if (missing(subset)) subset <- if (preMerger) rep(TRUE, length(object@shares)) else object@subset; subset <- .cf_subset(subset, length(object@shares)); p <- .cf_logit_root(object, preMerger, subset); out <- rep(NA_real_, length(object@shares)); out[subset] <- p; if (preMerger) out[!subset] <- object@prices[!subset]; names(out) <- object@labels; out
+  if (missing(subset)) subset <- if (preMerger) rep(TRUE, length(object@shares)) else object@subset
+  subset <- .cf_subset(subset, length(object@shares))
+  if (.coordination_real_object(object)) {
+    p <- .cf_logit_real_root(object, preMerger, subset)
+  } else {
+    positive <- try(.cf_logit_root(object, preMerger, subset), silent = TRUE)
+    if (inherits(positive, "try-error") && object@conduct == "cournot" &&
+        !isTRUE(object@output)) {
+      real <- try(.cf_logit_real_root(object, preMerger, subset), silent = TRUE)
+      .coordination_rethrow_or_classify(
+        positive, real, object, preMerger, which(subset)
+      )
+    }
+    if (inherits(positive, "try-error")) {
+      .coordination_stop_try_error(positive)
+    }
+    p <- positive
+  }
+  out <- rep(NA_real_, length(object@shares)); out[subset] <- p
+  if (preMerger) out[!subset] <- object@prices[!subset]
+  names(out) <- object@labels
+  out
 })
 setMethod("calcPrices", "CoreFringeCES", function(object, preMerger = TRUE, isMax = FALSE, subset, ...) {
   if (isTRUE(isMax)) stop("isMax = TRUE is not implemented for CoreFringeCES")
@@ -432,7 +541,21 @@ setMethod("calcPrices", "CoreFringeCES", function(object, preMerger = TRUE, isMa
 # for Bertrand/Cournot, while CES reports the equivalent Lerner FOC wedge.
 core_fringe_residuals <- function(object, preMerger = TRUE, prices = NULL) {
   if (!methods::is(object, "CoreFringeLogit") && !methods::is(object, "CoreFringeCES")) stop("object must be a CoreFringeLogit or CoreFringeCES")
-  st <- .cf_state(object, preMerger); n <- length(object@shares); if (!is.null(prices)) { p <- as.numeric(prices); if (length(p) == n) p <- p[st$subset]; if (length(p) != sum(st$subset) || any(!is.finite(p)) || any(p <= 0)) stop("prices must be positive and have full or active-product length"); full <- st$prices; full[st$subset] <- p } else full <- st$prices
+  st <- .cf_state(object, preMerger); n <- length(object@shares)
+  allowReal <- methods::is(object, "CoreFringeLogit") &&
+    .coordination_real_object(object)
+  if (!is.null(prices)) {
+    p <- as.numeric(prices)
+    if (length(p) == n) p <- p[st$subset]
+    bad <- length(p) != sum(st$subset) || any(!is.finite(p)) ||
+      (!allowReal && any(p <= 0))
+    if (bad) stop(if (allowReal) {
+      "prices must be finite and have full or active-product length"
+    } else {
+      "prices must be positive and have full or active-product length"
+    })
+    full <- st$prices; full[st$subset] <- p
+  } else full <- st$prices
   if (methods::is(object, "CoreFringeLogit")) {
     s <- .cf_logit_shares(object, full, st$subset); z <- .cf_logit_h(s, st$owner, st$core, object@conduct, st$subset); a <- abs(object@slopes$alpha); sig <- if (isTRUE(object@output)) 1 else -1; mu <- full - st$costs; raw <- rep(NA_real_, n)
     if (object@conduct == "bertrand") for (f in unique(st$owner[st$subset])) {
@@ -452,7 +575,13 @@ core_fringe_residuals <- function(object, preMerger = TRUE, prices = NULL) {
   }
   core <- raw[st$coreProducts]; fringe <- raw[st$fringeProducts]; all <- raw[which(st$subset)]
   names(core) <- object@labels[st$coreProducts]; names(fringe) <- object@labels[st$fringeProducts]
-  names(all) <- object@labels[which(st$subset)]; scale <- pmax(abs(full[st$subset]), .Machine$double.xmin); nr <- all / scale
+  names(all) <- object@labels[which(st$subset)]
+  scale <- if (allowReal) {
+    pmax(abs(full[st$subset]), 1)
+  } else {
+    pmax(abs(full[st$subset]), .Machine$double.xmin)
+  }
+  nr <- all / scale
   list(core = core, fringe = fringe, all = all,
        maxCore = if (length(core)) max(abs(core), na.rm = TRUE) else 0,
        maxFringe = if (length(fringe)) max(abs(fringe), na.rm = TRUE) else 0,

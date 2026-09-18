@@ -30,7 +30,8 @@ stackelberg(prices, shares, margins = rep(NA_real_, length(prices)), ownerPre,
   mcDelta = rep(0, length(prices)), subset = rep(TRUE, length(prices)),
   priceStart = prices, labels = paste0("Prod", seq_along(prices)),
   weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
-  control.slopes = list(), control.equ = list(), ...)
+  control.slopes = list(), control.equ = list(),
+  price_domain = c("positive", "real"), ...)
 stackelberg_followers(object, leaderActions, preMerger = TRUE, start = NULL,
   subset = NULL)
 stackelberg_response(object, preMerger = TRUE,
@@ -66,6 +67,10 @@ stackelberg_simulate(object,
   \item{alpha}{Optional positive absolute Logit price coefficient.}
   \item{gamma}{Optional CES elasticity, strictly greater than one. If omitted,
     it is calibrated from all usable positive observed margins.}
+  \item{price_domain}{Rate domain. The default \code{"positive"} preserves
+    the existing solvers. \code{"real"} is supported only for input Logit
+    Cournot games and permits finite zero or negative counterfactual rates;
+    CES and Bertrand combinations are rejected.}
   \item{weights}{Nonnegative product weights used by WLS calibration.}
   \item{control.slopes, control.equ}{Optional named solver-control lists.
     Set \code{control.equ$implicitCheck = FALSE} to skip the optional nested

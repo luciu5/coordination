@@ -247,6 +247,9 @@ setClass(
 #' @param weights Nonnegative calibration weights.
 #' @param alpha Optional positive absolute Logit price coefficient.
 #' @param gamma Optional CES elasticity, which must exceed one.
+#' @param price_domain Rate domain. The default `"positive"` retains the
+#'   existing equilibrium path. `"real"` is supported only for input Logit
+#'   Cournot games and permits finite zero or negative counterfactual rates.
 #' @param control.slopes,control.equ Named calibration and equilibrium solver
 #'   controls. Set code{control.equ$implicitCheck = FALSE} to skip the
 #'   optional nested implicit equilibrium diagnostic while retaining all
@@ -263,17 +266,24 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
                         labels = paste0("Prod", seq_along(prices)),
                         weights = rep(1, length(prices)), alpha = NULL,
                         gamma = NULL, control.slopes = list(),
-                        control.equ = list(), ...) {
+                        control.equ = list(),
+                        price_domain = c("positive", "real"), ...) {
   ownerPostWasMissing <- missing(ownerPost)
   priceOutsideWasMissing <- missing(priceOutside)
   demand <- match.arg(demand)
   conduct <- match.arg(conduct)
+  price_domain <- .coordination_validate_price_domain(
+    price_domain, demand, output, conduct
+  )
   if (!is.logical(output) || length(output) != 1L || is.na(output)) {
     stop("'output' must be one logical value")
   }
   if (demand == "ces") {
     if (priceOutsideWasMissing) priceOutside <- 1
-    return(.stackelberg_ces_constructor(
+    ## Keep the established CES solver controls untouched while it runs;
+    ## record the explicit domain after construction because price_domain is
+    ## not consumed by the CES equations.
+    result <- .stackelberg_ces_constructor(
       prices = prices, shares = shares, margins = margins,
       ownerPre = ownerPre, ownerPost = ownerPost, leadersPre = leadersPre,
       leadersPost = leadersPost, conduct = conduct, output = output,
@@ -281,7 +291,12 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
       mcDelta = mcDelta, subset = subset, priceStart = priceStart,
       labels = labels, weights = weights, alpha = alpha, gamma = gamma,
       control.slopes = control.slopes, control.equ = control.equ,
-      ownerPostWasMissing = ownerPostWasMissing, dots = list(...)))
+      ownerPostWasMissing = ownerPostWasMissing, dots = list(...))
+    result@control.equ <- .coordination_set_price_domain(
+      result@control.equ, price_domain
+    )
+    result@diagnostics$price_domain <- price_domain
+    return(result)
   }
   if (demand != "logit") {
     stop("Stackelberg CES is reserved for a later implementation; demand='ces' is unsupported")
@@ -293,6 +308,7 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
   }
   .sk_stop_matrix(control.slopes, "control.slopes")
   .sk_stop_matrix(control.equ, "control.equ")
+  control.equ <- .coordination_set_price_domain(control.equ, price_domain)
   n <- length(prices)
   prices <- as.numeric(prices); shares <- as.numeric(shares)
   margins <- as.numeric(margins)
@@ -354,7 +370,7 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
     mktSize = insideSize / sum(shares), labels = labels,
     conduct = conduct, leadersPre = leadersPre, leadersPost = leadersPost,
     firmOwnerPre = ownerPre, firmOwnerPost = ownerPost,
-    diagnostics = list(observedMargins = margins),
+    diagnostics = list(observedMargins = margins, price_domain = price_domain),
     alphaFixed = if (is.null(alpha)) NA_real_ else as.numeric(alpha)
   ))
   if (length(control.slopes)) result@control.slopes <- control.slopes
@@ -451,12 +467,41 @@ setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
   shares <- calcShares(object, preMerger = preMerger, revenue = FALSE)
   h <- .sk_h(shares, st$owner, st$leaders, object@conduct, st$subset)
   a <- abs(.sk_beta(object))
-  out <- .sk_margin_from_h(h, st$prices, a)
+  dollar <- h / a
+  out <- if (level) dollar else {
+    ans <- rep(NA_real_, length(st$prices))
+    ok <- st$subset & is.finite(st$prices) & st$prices != 0
+    ans[ok] <- dollar[ok] / st$prices[ok]
+    ans
+  }
   out[!st$subset] <- NA_real_
   names(out) <- object@labels
-  if (level) out <- out * st$prices
-  names(out) <- object@labels
+  if (.coordination_real_object(object) ||
+      any(st$prices[st$subset] <= 0)) {
+    attr(out, "diagnostics") <- list(
+      normalized_undefined_zero = st$subset & st$prices == 0,
+      signed_negative_price = st$subset & st$prices < 0,
+      dollar_margin = dollar
+    )
+  }
   out
+})
+
+setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
+                                                     revenue = FALSE, ...) {
+  if (isTRUE(revenue)) {
+    st <- .sk_state(object, preMerger)
+    if (any(st$prices[st$subset] <= 0)) {
+      out <- rep(NA_real_, length(object@shares))
+      names(out) <- object@labels
+      attr(out, "diagnostics") <- list(
+        revenue_share_undefined = st$subset,
+        nonpositive_active_price = st$subset & st$prices <= 0
+      )
+      return(out)
+    }
+  }
+  callNextMethod()
 })
 
 .sk_price_root <- function(object, preMerger, subset, start = NULL, ...) {
@@ -501,7 +546,10 @@ setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
                               control = list(ftol = tol, maxit = maxit)), silent = TRUE)
   z <- if (!inherits(sol, "try-error") && is.finite(sol$termcd) && sol$termcd <= 2) sol$x else NULL
   if (is.null(z)) {
-    bb <- try(BB::BBsolve(log(start), foc, quiet = TRUE, control = ctl), silent = TRUE)
+    bb <- try(BB::BBsolve(
+      log(start), foc, quiet = TRUE,
+      control = .coordination_solver_control(ctl)
+    ), silent = TRUE)
     if (!inherits(bb, "try-error") && is.finite(bb$convergence) && bb$convergence == 0) z <- bb$par
   }
   if (is.null(z) || any(!is.finite(z))) stop("Stackelberg price equilibrium solver failed")
@@ -533,12 +581,40 @@ setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
   p
 }
 
+.sk_logit_real_root <- function(object, preMerger, subset) {
+  st <- .sk_state(object, preMerger, subset)
+  z <- .coordination_real_quantity_state(
+    object, st$costs, st$owner, st$leaders, subset, game = "stackelberg"
+  )
+  p <- z$prices[subset]
+  full <- st$prices
+  full[subset] <- p
+  tmp <- object
+  if (preMerger) tmp@pricePre <- full else tmp@pricePost <- full
+  dollar <- as.numeric(calcMargins(tmp, preMerger = preMerger, level = TRUE))
+  price_foc <- p - st$costs[subset] + dollar[subset]
+  if (any(!is.finite(price_foc)) || max(abs(price_foc)) > 2e-10) {
+    stop("Stackelberg real Logit Cournot price FOC exceeds tolerance")
+  }
+  diag <- stackelberg_residuals(tmp, preMerger)
+  if (!is.finite(diag$max) || diag$max > 2e-7) {
+    stop("Stackelberg real Logit Cournot residual exceeds tolerance")
+  }
+  p
+}
+
 .sk_implicit_price_root <- function(object, preMerger, subset) {
   st <- .sk_state(object, preMerger, subset)
   li <- which(subset & st$owner %in% st$leaders)
   fi <- which(subset & !(st$owner %in% st$leaders))
   n <- length(object@shares); M <- object@mktSize
-  if (!length(li)) return(.sk_price_root(object, preMerger, subset))
+  if (!length(li)) {
+    return(if (.coordination_real_object(object)) {
+      .sk_logit_real_root(object, preMerger, subset)
+    } else {
+      .sk_price_root(object, preMerger, subset)
+    })
+  }
   if (object@conduct == "bertrand") {
     p0 <- if (preMerger) object@priceStart else object@pricePost
     if (length(p0) != n || any(!is.finite(p0[li])) || any(p0[li] <= 0)) p0 <- object@prices
@@ -564,7 +640,13 @@ setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
       R <- .sk_implicit_response_at(tmp, preMerger, subset)
       g <- .sk_leader_foc_with_response(tmp, preMerger, subset, R = R)
       ss <- calcShares(tmp, preMerger, revenue = FALSE)
-      scale <- if (object@conduct == "bertrand") M * ss[li] else p[li]
+      scale <- if (object@conduct == "bertrand") {
+        M * ss[li]
+      } else if (.coordination_real_object(object)) {
+        q[li]
+      } else {
+        p[li]
+      }
       eq <- g / pmax(scale, 1e-10)
       list(eq = eq, p = p, q = q)
     }, silent = TRUE)
@@ -627,7 +709,33 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
                                                        method = c("analytic", "implicit"), ...) {
   subset <- .sk_active(object, preMerger, subset)
   method <- match.arg(method)
-  p <- if (method == "implicit") .sk_implicit_price_root(object, preMerger, subset) else .sk_price_root(object, preMerger, subset, ...)
+  if (.coordination_real_object(object)) {
+    p <- if (method == "implicit") {
+      .sk_implicit_price_root(object, preMerger, subset)
+    } else {
+      .sk_logit_real_root(object, preMerger, subset)
+    }
+  } else {
+    positive <- try(
+      if (method == "implicit") {
+        .sk_implicit_price_root(object, preMerger, subset)
+      } else {
+        .sk_price_root(object, preMerger, subset, ...)
+      },
+      silent = TRUE
+    )
+    if (inherits(positive, "try-error") && object@conduct == "cournot" &&
+        !isTRUE(object@output) && method == "analytic") {
+      real <- try(.sk_logit_real_root(object, preMerger, subset), silent = TRUE)
+      .coordination_rethrow_or_classify(
+        positive, real, object, preMerger, which(subset)
+      )
+    }
+    if (inherits(positive, "try-error")) {
+      .coordination_stop_try_error(positive)
+    }
+    p <- positive
+  }
   out <- rep(NA_real_, length(object@shares))
   out[subset] <- p
   if (preMerger) out[!subset] <- object@prices[!subset]
@@ -780,17 +888,29 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
     if (any(!is.finite(arg))) stop("non-finite follower inverse-demand primitive")
     ma <- max(arg)
     logA <- ma + log(sum(exp(arg - ma)))
-    ## Solve log(t)+t=log(A) by safeguarded Newton.  This is the positive
-    ## Lambert-W branch and avoids a multidimensional quantity root.
-    t <- if (logA < 0) exp(logA) else max(logA - log1p(logA), 1e-8)
-    for (it in seq_len(100L)) {
-      step <- (log(t) + t - logA) / (1 / t + 1)
-      tn <- t - step
-      if (!is.finite(tn) || tn <= 0) tn <- t / 2
-      if (abs(tn - t) <= 1e-13 * (1 + abs(t))) { t <- tn; break }
-      t <- tn
+    ## The new log-domain helper is used by the explicit real-rate path.
+    ## Preserve the established positive-domain iteration byte-for-byte in
+    ## behavior for historical callers.
+    if (.coordination_real_object(object)) {
+      t <- .coordination_log_w_exp(logA)
+    } else {
+      t <- if (logA < 0) exp(logA) else max(logA - log1p(logA), 1e-8)
+      for (it in seq_len(100L)) {
+        step <- (log(t) + t - logA) / (1 / t + 1)
+        tn <- t - step
+        if (!is.finite(tn) || tn <= 0) tn <- t / 2
+        if (abs(tn - t) <= 1e-13 * (1 + abs(t))) {
+          t <- tn
+          break
+        }
+        t <- tn
+      }
     }
-    if (!is.finite(t) || t <= 0 || abs(log(t) + t - logA) > 1e-8) stop("follower quantity closed form failed")
+    if (!is.finite(t) || t <= 0) stop("follower quantity closed form failed")
+    if (!.coordination_real_object(object) &&
+        abs(log(t) + t - logA) > 1e-8) {
+      stop("follower quantity closed form failed")
+    }
     tf[f] <- t
     logu[ix] <- arg - t
   }
@@ -1042,6 +1162,11 @@ stackelberg_residuals <- function(object, preMerger = TRUE,
   } else {
     qscale <- tmpPrice[subset]
   }
+  undefinedNormalized <- rep(FALSE, length(g))
+  if (object@conduct == "cournot" && .coordination_real_object(object)) {
+    undefinedNormalized <- qscale == 0
+    qscale[undefinedNormalized] <- NA_real_
+  }
   qscale <- pmax(abs(qscale), .Machine$double.xmin)
   normalizedLeader <- leader / qscale[li]
   normalizedFollower <- follower / qscale[!li]
@@ -1049,18 +1174,24 @@ stackelberg_residuals <- function(object, preMerger = TRUE,
   normalizedValues <- c(abs(normalizedLeader), abs(normalizedFollower)); normalizedValues <- normalizedValues[is.finite(normalizedValues)]
   maxLeader <- if (length(leader) && any(is.finite(leader))) max(abs(leader), na.rm = TRUE) else 0
   maxFollower <- if (length(follower) && any(is.finite(follower))) max(abs(follower), na.rm = TRUE) else 0
-  list(leader = leader, follower = follower, all = all,
+  out <- list(leader = leader, follower = follower, all = all,
        maxLeader = maxLeader,
        maxFollower = maxFollower,
        max = max(c(if (length(leader)) abs(leader) else 0,
                    if (length(follower)) abs(follower) else 0), na.rm = TRUE),
        normalizedLeader = normalizedLeader, normalizedFollower = normalizedFollower,
        normalizedAll = normalizedAll,
-       maxNormalizedLeader = if (length(normalizedLeader)) max(abs(normalizedLeader), na.rm = TRUE) else 0,
-       maxNormalizedFollower = if (length(normalizedFollower)) max(abs(normalizedFollower), na.rm = TRUE) else 0,
-       maxNormalized = if (length(normalizedValues)) max(normalizedValues) else 0,
+       maxNormalizedLeader = if (any(undefinedNormalized[li])) NA_real_ else if (length(normalizedLeader)) max(abs(normalizedLeader), na.rm = TRUE) else 0,
+       maxNormalizedFollower = if (any(undefinedNormalized[!li])) NA_real_ else if (length(normalizedFollower)) max(abs(normalizedFollower), na.rm = TRUE) else 0,
+       maxNormalized = if (any(undefinedNormalized)) NA_real_ else if (length(normalizedValues)) max(normalizedValues) else 0,
        leaderProducts = which(subset)[li], followerProducts = which(subset)[!li],
        status = "evaluated")
+  if (.coordination_real_object(object)) {
+    out$undefined_normalized_zero <- setNames(
+      undefinedNormalized, object@labels[subset]
+    )
+  }
+  out
 }
 
 #' Apply ownership and proportional marginal-cost counterfactuals.

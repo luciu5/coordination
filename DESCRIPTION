@@ -1,7 +1,7 @@
 Package: coordination
 Type: Package
 Title: Coordinated Effects Models for Antitrust Analysis
-Version: 0.0.0.9003
+Version: 0.0.0.9004
 Date: 2026-09-09
 Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com",
                   role = c("aut", "cre")),
@@ -30,6 +30,7 @@ License: CC0
 LazyLoad: yes
 Collate:
     'coordination-package.R'
+    'LogitRateDomain.R'
     'PriceLeadershipClasses.R'
     'StackelbergLogit.R'
     'StackelbergCES.R'
