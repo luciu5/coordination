@@ -31,7 +31,9 @@ stackelberg(prices, shares, margins = rep(NA_real_, length(prices)), ownerPre,
   priceStart = prices, labels = paste0("Prod", seq_along(prices)),
   weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
   control.slopes = list(), control.equ = list(),
-  price_domain = c("positive", "real"), ...)
+  price_domain = c("positive", "real"),
+  revenueRetentionPre = rep(1, length(prices)),
+  revenueRetentionPost = revenueRetentionPre, ...)
 stackelberg_followers(object, leaderActions, preMerger = TRUE, start = NULL,
   subset = NULL)
 stackelberg_response(object, preMerger = TRUE,
@@ -40,7 +42,8 @@ stackelberg_residuals(object, preMerger = TRUE, prices = NULL,
   quantities = NULL)
 stackelberg_simulate(object,
   ownerPost = object@firmOwnerPost, leadersPost = NULL,
-  mcDelta = object@mcDelta, subset = object@subset, ...)
+  mcDelta = object@mcDelta, subset = object@subset,
+  revenueRetentionPost = antitrust::getRetention(object, FALSE), ...)
 }
 \arguments{
   \item{prices}{Observed product prices, or an active/full price vector for
@@ -61,6 +64,13 @@ stackelberg_simulate(object,
   \item{priceOutside}{Fixed outside-good price; CES defaults to 1 and requires
     a strictly positive value when supplied.}
   \item{mcDelta}{Proportional marginal-cost/value changes for the post state.}
+  \item{revenueRetentionPre,revenueRetentionPost}{Positive finite fractions of
+    gross revenue retained by each product's seller. Values above one denote
+    subsidies. Costs and observed margins use effective cost (physical cost
+    divided by retention). Changing retention does not itself change the
+    effective-cost slots; supply the corresponding \code{mcDelta} as well.
+    Retention is distinct from ownership. Mixed retention within a firm uses
+    weighted profit equations and implicit follower responses.}
   \item{subset}{Products active in the post state.}
   \item{priceStart}{Positive starting prices for equilibrium solving.}
   \item{labels}{Product labels.}

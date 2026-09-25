@@ -270,7 +270,9 @@ setClass(
                                          priceOutside, mcDelta, subset,
                                          priceStart, labels, weights, alpha,
                                          gamma, control.slopes, control.equ,
-                                         ownerPostWasMissing = FALSE, dots = list()) {
+                                         ownerPostWasMissing = FALSE, dots = list(),
+                                         revenueRetentionPre = rep(1, length(prices)),
+                                         revenueRetentionPost = revenueRetentionPre) {
   if (length(dots)) {
     bad <- intersect(names(dots), c("diversions", "nests", "sigma", "mktElast"))
     if (length(bad)) stop("unsupported Stackelberg CES arguments: ", paste(bad, collapse = ", "))
@@ -333,6 +335,7 @@ setClass(
   if (length(control.equ)) result@control.equ <- control.equ
   result@diagnostics$parentMargins <- parentMargins
   result@diagnostics$marginProvenance <- if (allMissing) "fixed_gamma_placeholder" else "observed"
+  result <- antitrust::setRetention(result, revenueRetentionPre, revenueRetentionPost)
   result <- calcSlopes(result)
   pred <- result@diagnostics$impliedMargins
   result@mcPre <- prices * (1 - pred)
@@ -372,6 +375,7 @@ setClass(
 
 #' @rdname StackelbergLogit
 setMethod("calcSlopes", "StackelbergCES", function(object, ...) {
+  if (.coord_mixed_retention(object, TRUE)) return(.coord_retained_slopes(object))
   n <- length(object@shares); prices <- object@prices
   if (length(object@gammaFixed) == 1L && is.finite(object@gammaFixed) && object@gammaFixed > 1) {
     fit <- .ces_calibration(object, prices, .sk_observed(object), object@firmOwnerPre,
@@ -404,6 +408,7 @@ setMethod("calcMC", "StackelbergCES", function(object, preMerger = TRUE) {
 
 #' @rdname StackelbergLogit
 setMethod("calcMargins", "StackelbergCES", function(object, preMerger = TRUE, level = FALSE) {
+  if (.coord_mixed_retention(object, preMerger)) return(.coord_retained_margins(object, preMerger, level))
   st <- .ces_active_state(object, preMerger)
   d <- .ces_demand_from_prices(object, st$prices, st$subset)
   m <- .ces_multipliers(d$revenue, st$owner, st$leaders, st$gamma,
@@ -467,6 +472,10 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
                                                        isMax = FALSE, subset,
                                                        method = c("analytic", "implicit"), ...) {
   subset <- .sk_active(object, preMerger, subset); method <- match.arg(method)
+  if (.coord_mixed_retention(object, preMerger, subset)) {
+    out <- rep(NA_real_, length(subset)); out[subset] <- .coord_retained_root(object, preMerger, subset)
+    names(out) <- object@labels; return(out)
+  }
   p <- if (method == "implicit") .ces_implicit_price_root(object, preMerger, subset) else
     .ces_price_root(object, preMerger, subset, ...)
   out <- rep(NA_real_, length(object@shares)); out[subset] <- p
@@ -540,6 +549,7 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
 .ces_raw_foc <- function(object, action, preMerger = TRUE, subset = NULL) {
   st <- .ces_active_state(object, preMerger, subset); n <- length(object@shares)
   subset <- st$subset; p <- rep(NA_real_, n)
+  retention <- .coord_retention(object, preMerger)
   if (object@conduct == "bertrand") {
     p[subset] <- as.numeric(action); d <- .ces_demand_from_prices(object, p, subset)
     g <- numeric(sum(subset)); active <- which(subset)
@@ -547,7 +557,7 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
       j <- active[jj]; own <- which(subset & st$owner == st$owner[j]);
       mu <- d$prices[own] - st$costs[own]
       dq <- d$quantities[own] / d$prices[j] * (-st$gamma * (own == j) + (st$gamma - 1) * d$revenue[j])
-      g[jj] <- d$quantities[j] + sum(mu * dq)
+      g[jj] <- retention[j] * d$quantities[j] + sum(retention[own] * mu * dq)
     }
     return(g)
   }
@@ -556,14 +566,15 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
   h <- st$gamma - 1; b <- h / (st$gamma * (1 + h * d$r0))
   g <- numeric(sum(subset)); active <- which(subset)
   for (jj in seq_along(active)) {
-    j <- active[jj]; own <- which(subset & st$owner == st$owner[j]); Rf <- sum(d$revenue[own])
-    g[jj] <- d$prices[j] - st$costs[j] - d$prices[j] / st$gamma - b * d$prices[j] * Rf
+    j <- active[jj]; own <- which(subset & st$owner == st$owner[j]); Rf <- sum(retention[own] * d$revenue[own])
+    g[jj] <- retention[j] * (d$prices[j] - st$costs[j] - d$prices[j] / st$gamma) - b * d$prices[j] * Rf
   }
   g
 }
 
 .ces_implicit_response_at <- function(object, preMerger = TRUE, subset = NULL) {
   st <- .ces_active_state(object, preMerger, subset); subset <- st$subset
+  if (.coord_mixed_retention(object, preMerger, subset)) return(.coord_retained_response(object, preMerger, subset))
   active <- which(subset); li <- active[st$owner[active] %in% st$leaders]
   fi <- active[!(st$owner[active] %in% st$leaders)]
   out <- matrix(numeric(), nrow = length(fi), ncol = length(li),
@@ -589,13 +600,14 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
     q[subset] <- dd$quantities[subset]; .ces_demand_from_quantities(object, q, subset)
   }
   firms <- intersect(st$leaders, unique(st$owner[active])); ans <- list()
+  retention <- .coord_retention(object, preMerger)
   if (object@conduct == "bertrand") {
     for (f in firms) {
       own <- which(subset & st$owner == f); v <- numeric(length(active))
       for (jj in seq_along(active)) {
         j <- active[jj]
         dq <- d$quantities[own] / d$prices[j] * (-st$gamma * (own == j) + (st$gamma - 1) * d$revenue[j])
-        v[jj] <- sum((own == j) * d$quantities[own] + (d$prices[own] - st$costs[own]) * dq)
+        v[jj] <- sum(retention[own] * ((own == j) * d$quantities[own] + (d$prices[own] - st$costs[own]) * dq))
       }
       ans[[f]] <- v
     }
@@ -607,7 +619,7 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
         j <- active[jj]
         K <- -d$prices[own] / (st$gamma * d$quantities[own]) * (own == j) -
           b * d$prices[own] * d$prices[j] / st$E
-        v[jj] <- sum((own == j) * (d$prices[own] - st$costs[own]) + d$quantities[own] * K)
+        v[jj] <- sum(retention[own] * ((own == j) * (d$prices[own] - st$costs[own]) + d$quantities[own] * K))
       }
       ans[[f]] <- v
     }
@@ -710,6 +722,7 @@ setMethod("calcPrices", "StackelbergCES", function(object, preMerger = TRUE,
 
 .ces_stackelberg_response <- function(object, preMerger = TRUE, method = "analytic") {
   method <- match.arg(method, c("analytic", "implicit"))
+  if (.coord_mixed_retention(object, preMerger)) method <- "implicit"
   st <- .ces_active_state(object, preMerger); subset <- st$subset; active <- which(subset)
   li <- active[st$owner[active] %in% st$leaders]; fi <- active[!(st$owner[active] %in% st$leaders)]
   out <- matrix(numeric(), nrow = length(fi), ncol = length(li),

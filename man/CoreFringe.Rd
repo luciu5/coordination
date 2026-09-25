@@ -29,9 +29,12 @@ core_fringe(prices, shares, margins = rep(NA_real_, length(prices)), ownerPre,
   priceStart = prices, labels = paste0("Prod", seq_along(prices)),
   weights = rep(1, length(prices)), alpha = NULL, gamma = NULL,
   control.slopes = list(), control.equ = list(),
-  price_domain = c("positive", "real"), ...)
+  price_domain = c("positive", "real"),
+  revenueRetentionPre = rep(1, length(prices)),
+  revenueRetentionPost = revenueRetentionPre, ...)
 core_fringe_simulate(object, ownerPost = object@firmOwnerPost,
-  corePost = NULL, mcDelta = object@mcDelta, subset = object@subset, ...)
+  corePost = NULL, mcDelta = object@mcDelta, subset = object@subset,
+  revenueRetentionPost = antitrust::getRetention(object, FALSE), ...)
 core_fringe_residuals(object, preMerger = TRUE, prices = NULL)
 }
 \arguments{
@@ -55,6 +58,13 @@ core_fringe_residuals(object, preMerger = TRUE, prices = NULL)
   \item{priceOutside}{Outside-good price. CES requires a positive value and
     defaults to one; Logit defaults to zero.}
   \item{mcDelta}{Proportional marginal-cost/value changes in the post state.}
+  \item{revenueRetentionPre,revenueRetentionPost}{Positive finite fractions of
+    gross revenue retained by product sellers. Values above one denote
+    subsidies. Costs and observed margins use effective cost (physical cost
+    divided by retention). Supply the corresponding \code{mcDelta} when
+    changing tariffs; these retention controls change profit weights only.
+    Core firms optimize retained portfolio profit, while fringe products
+    retain the model's atomistic condition.}
   \item{subset}{Logical vector of products active in the post state.}
   \item{priceStart}{Positive starting prices for equilibrium solving.}
   \item{labels}{Product labels.}

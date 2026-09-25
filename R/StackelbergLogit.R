@@ -225,6 +225,9 @@ setClass(
 #' antitrust's legacy linear/log-linear `stackelberg()` remains unchanged.
 #' @rdname StackelbergLogit
 #' @param prices Positive observed product prices.
+#' @param revenueRetentionPre,revenueRetentionPost Positive finite product
+#'   revenue-retention fractions. Effective costs are physical costs divided
+#'   by retention; changing retention weights does not itself change costs.
 #' @param shares Unconditional product shares: quantity shares for Logit and
 #'   revenue shares for CES.  Their sum must be below one.
 #' @param margins Optional positive observed proportional margins.  Missing
@@ -267,7 +270,9 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
                         weights = rep(1, length(prices)), alpha = NULL,
                         gamma = NULL, control.slopes = list(),
                         control.equ = list(),
-                        price_domain = c("positive", "real"), ...) {
+                        price_domain = c("positive", "real"),
+                        revenueRetentionPre = rep(1, length(prices)),
+                        revenueRetentionPost = revenueRetentionPre, ...) {
   ownerPostWasMissing <- missing(ownerPost)
   priceOutsideWasMissing <- missing(priceOutside)
   demand <- match.arg(demand)
@@ -286,6 +291,7 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
     result <- .stackelberg_ces_constructor(
       prices = prices, shares = shares, margins = margins,
       ownerPre = ownerPre, ownerPost = ownerPost, leadersPre = leadersPre,
+      revenueRetentionPre = revenueRetentionPre, revenueRetentionPost = revenueRetentionPost,
       leadersPost = leadersPost, conduct = conduct, output = output,
       insideSize = insideSize, normIndex = normIndex, priceOutside = priceOutside,
       mcDelta = mcDelta, subset = subset, priceStart = priceStart,
@@ -375,11 +381,12 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
   ))
   if (length(control.slopes)) result@control.slopes <- control.slopes
   if (length(control.equ)) result@control.equ <- control.equ
+  result <- antitrust::setRetention(result, revenueRetentionPre, revenueRetentionPost)
   result <- calcSlopes(result)
   ## Costs are fixed at the baseline hard-role FOCs and then shocked
   ## proportionally.  No post-equilibrium FOC is used to reinvert costs.
   a <- result@diagnostics$demandparam
-  result@mcPre <- if (isTRUE(output)) prices - hPre / a else prices + hPre / a
+  result@mcPre <- if (isTRUE(output)) prices * (1 - result@diagnostics$impliedMargins) else prices + hPre / a
   if (any(!is.finite(result@mcPre))) stop("baseline marginal costs are not finite")
   result@mcPost <- result@mcPre * (1 + mcDelta)
   result@pricePre <- calcPrices(result, TRUE, subset = rep(TRUE, n))
@@ -421,6 +428,7 @@ stackelberg <- function(prices, shares, margins = rep(NA_real_, length(prices)),
 #' @rdname StackelbergLogit
 #' @export
 setMethod("calcSlopes", "StackelbergLogit", function(object, ...) {
+  if (.coord_mixed_retention(object, TRUE)) return(.coord_retained_slopes(object))
   h <- .sk_h(object@shares, object@firmOwnerPre, object@leadersPre,
              object@conduct, rep(TRUE, length(object@shares)))
   if (length(object@alphaFixed) == 1L && is.finite(object@alphaFixed) && object@alphaFixed > 0) {
@@ -462,6 +470,7 @@ setMethod("calcMC", "StackelbergLogit", function(object, preMerger = TRUE) {
 #' @export
 setMethod("calcMargins", "StackelbergLogit", function(object, preMerger = TRUE,
                                                         level = FALSE) {
+  if (.coord_mixed_retention(object, preMerger)) return(.coord_retained_margins(object, preMerger, level))
   st <- .sk_state(object, preMerger)
   if (preMerger) st$prices <- object@pricePre
   shares <- calcShares(object, preMerger = preMerger, revenue = FALSE)
@@ -709,6 +718,12 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
                                                        method = c("analytic", "implicit"), ...) {
   subset <- .sk_active(object, preMerger, subset)
   method <- match.arg(method)
+  if (.coord_mixed_retention(object, preMerger, subset)) {
+    out <- rep(NA_real_, length(subset))
+    out[subset] <- .coord_retained_root(object, preMerger, subset)
+    names(out) <- object@labels
+    return(out)
+  }
   if (.coordination_real_object(object)) {
     p <- if (method == "implicit") {
       .sk_implicit_price_root(object, preMerger, subset)
@@ -752,6 +767,7 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
   beta <- .sk_beta(object)
   M <- object@mktSize
   sigma <- if (isTRUE(object@output)) 1 else -1
+  retention <- .coord_retention(object, preMerger)
   if (object@conduct == "bertrand") {
     p <- rep(NA_real_, n); p[subset] <- action
     if (preMerger) p[!subset] <- object@prices[!subset]
@@ -763,8 +779,8 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
     g <- rep(NA_real_, n)
     for (f in unique(owner[subset])) {
       ix <- which(subset & owner == f)
-      H <- sum(mu[ix] * s[ix])
-      g[ix] <- sigma * M * s[ix] * (1 + beta * (mu[ix] - H))
+      H <- sum(retention[ix] * mu[ix] * s[ix])
+      g[ix] <- sigma * M * s[ix] * (retention[ix] + beta * (retention[ix] * mu[ix] - H))
     }
     return(g[subset])
   }
@@ -779,12 +795,12 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
   g <- rep(NA_real_, n)
   for (f in unique(owner[subset])) {
     ix <- which(subset & owner == f)
-    sf <- sum(s[ix])
+    sf <- sum(retention[ix] * s[ix])
     ## The signed inverse-demand coefficient makes the quantity FOC
     ## mu + (1+S_f/s0)/beta = 0 for both output and input markets.
   ## This is the raw derivative with respect to actual q (no market-size
   ## rescaling); sigma changes the input-market payoff orientation.
-  g[ix] <- sigma * (mu[ix] + (1 + sf / s0) / beta)
+  g[ix] <- sigma * (retention[ix] * mu[ix] + (retention[ix] + sf / s0) / beta)
   }
   g[subset]
 }
@@ -797,6 +813,7 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
   M <- object@mktSize
   beta <- .sk_beta(object)
   sigma <- if (isTRUE(object@output)) 1 else -1
+  retention <- .coord_retention(object, preMerger)
   li <- which(subset & st$owner %in% st$leaders)
   fi <- which(subset & !(st$owner %in% st$leaders))
   ans <- setNames(rep(NA_real_, n), object@labels)
@@ -808,12 +825,12 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
   if (object@conduct == "bertrand") {
     for (f in unique(st$owner[li])) {
       own <- which(subset & st$owner == f)
-      H <- sum(mu[own] * s[own])
+      H <- sum(retention[own] * mu[own] * s[own])
       ## Derivative with respect to a foreign product's price has no direct
       ## revenue term: it is only -beta*s_j times the leader's weighted
       ## margin.  Own products additionally carry the direct s_k term.
       direct <- sigma * (-M * s * beta * H)
-      direct[own] <- sigma * M * s[own] * (1 + beta * (mu[own] - H))
+      direct[own] <- sigma * M * s[own] * (retention[own] + beta * (retention[own] * mu[own] - H))
       for (k in own) {
         col <- match(k, li)
         ans[k] <- direct[k] + if (length(fi)) sum(direct[fi] * R[, col]) else 0
@@ -829,8 +846,8 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
     q <- M * s
     for (f in unique(st$owner[li])) {
       own <- which(subset & st$owner == f)
-      direct <- sigma * as.numeric(crossprod(q[own], K[own, , drop = FALSE]))
-      direct[own] <- direct[own] + sigma * mu[own]
+      direct <- sigma * as.numeric(crossprod(retention[own] * q[own], K[own, , drop = FALSE]))
+      direct[own] <- direct[own] + sigma * retention[own] * mu[own]
       for (k in own) {
         col <- match(k, li)
         ans[k] <- direct[k] + if (length(fi)) sum(direct[fi] * R[, col]) else 0
@@ -846,6 +863,7 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
 
 .sk_implicit_response_at <- function(object, preMerger = TRUE, subset = NULL) {
   subset <- .sk_active(object, preMerger, subset)
+  if (.coord_mixed_retention(object, preMerger, subset)) return(.coord_retained_response(object, preMerger, subset))
   st <- .sk_state(object, preMerger, subset)
   fi <- which(subset & !(st$owner %in% st$leaders))
   li <- which(subset & st$owner %in% st$leaders)
@@ -932,6 +950,9 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
   }
   if (!methods::is(object, "StackelbergLogit")) stop("object must be a StackelbergLogit")
   subset <- .sk_active(object, preMerger, subset)
+  if (.coord_mixed_retention(object, preMerger, subset)) {
+    return(.coord_retained_followers(object, leaderActions, preMerger, start, subset))
+  }
   st <- .sk_state(object, preMerger, subset)
   sigma <- if (isTRUE(object@output)) 1 else -1
   leaderProducts <- which(subset & st$owner %in% st$leaders)
@@ -1071,6 +1092,7 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
 stackelberg_response <- function(object, preMerger = TRUE,
                                  method = c("analytic", "implicit")) {
   method <- match.arg(method)
+  if (.coord_mixed_retention(object, preMerger)) method <- "implicit"
   if (methods::is(object, "StackelbergCES")) {
     return(.ces_stackelberg_response(object, preMerger, method))
   }
@@ -1199,7 +1221,9 @@ stackelberg_residuals <- function(object, preMerger = TRUE,
 #' @export
 stackelberg_simulate <- function(object, ownerPost = object@firmOwnerPost,
                                  leadersPost = NULL, mcDelta = object@mcDelta,
-                                 subset = object@subset, ...) {
+                                 subset = object@subset,
+                                 revenueRetentionPost = antitrust::getRetention(object, FALSE), ...) {
+  object <- antitrust::setRetention(object, retentionPost = revenueRetentionPost)
   if (methods::is(object, "StackelbergCES")) {
     return(.ces_stackelberg_simulate(object, ownerPost, leadersPost, mcDelta, subset, list(...)))
   }

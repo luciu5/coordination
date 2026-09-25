@@ -1,7 +1,7 @@
 Package: coordination
 Type: Package
 Title: Coordinated Effects Models for Antitrust Analysis
-Version: 0.0.0.9004
+Version: 0.0.0.9005
 Date: 2026-09-09
 Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com",
                   role = c("aut", "cre")),
@@ -10,7 +10,7 @@ Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com
                   )
 Maintainer: Charles Taragin <ctaragin+antitrustr@gmail.com>
 Author: Charles Taragin [aut, cre], David Benson [ctb]
-Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.38)
+Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.41)
 Suggests: testthat
 Remotes: luciu5/antitrust@refactor
 Encoding: UTF-8
@@ -35,6 +35,7 @@ Collate:
     'StackelbergLogit.R'
     'StackelbergCES.R'
     'CoreFringe.R'
+    'RevenueRetention.R'
     'PriceLeadershipFunctions.R'
     'PriceLeadershipBLPFunctions.R'
     'GrimTriggerMethods.R'
