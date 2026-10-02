@@ -79,7 +79,8 @@ stackelberg_simulate(object,
     it is calibrated from all usable positive observed margins.}
   \item{price_domain}{Rate domain. The default \code{"positive"} preserves
     the existing solvers. \code{"real"} is supported only for input Logit
-    Cournot games and permits finite zero or negative counterfactual rates;
+    Bertrand and Cournot games and permits finite zero or negative
+    counterfactual rates;
     CES and Bertrand combinations are rejected.}
   \item{weights}{Nonnegative product weights used by WLS calibration.}
   \item{control.slopes, control.equ}{Optional named solver-control lists.

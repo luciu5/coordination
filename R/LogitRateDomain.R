@@ -8,7 +8,7 @@
 
 .coordination_real_logit <- function(price_domain, output, conduct) {
   isTRUE(identical(price_domain, "real") &&
-    !isTRUE(output) && identical(conduct, "cournot"))
+    !isTRUE(output) && conduct %in% c("bertrand", "cournot"))
 }
 
 .coordination_validate_price_domain <- function(price_domain, demand, output,
@@ -16,8 +16,8 @@
   price_domain <- .coordination_price_domain(price_domain)
   if (identical(price_domain, "real") &&
       (!identical(demand, "logit") || isTRUE(output) ||
-       !identical(conduct, "cournot"))) {
-    stop("price_domain = 'real' supports only input Logit Cournot games.",
+       !conduct %in% c("bertrand", "cournot"))) {
+    stop("price_domain = 'real' supports only input Logit Bertrand or Cournot games.",
          call. = FALSE)
   }
   price_domain
@@ -42,7 +42,7 @@
 
 .coordination_real_object <- function(object) {
   identical(.coordination_object_price_domain(object), "real") &&
-    isTRUE(!object@output) && identical(object@conduct, "cournot")
+    isTRUE(!object@output) && object@conduct %in% c("bertrand", "cournot")
 }
 
 .coordination_solver_control <- function(control.equ) {
@@ -195,7 +195,7 @@
   label <- if (length(labels) >= index) as.character(labels[[index]]) else as.character(index)
   msg <- paste0(
     original_message,
-    "; positive price domain obstructed by a unique real Cournot root at ",
+    "; positive price domain obstructed by a real equilibrium root at ",
     "rate ", format(rate[[i]], digits = 8), " for product '", label, "'"
   )
   cnd <- structure(

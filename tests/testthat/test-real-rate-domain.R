@@ -124,23 +124,17 @@ test_that("zero Stack rates retain finite FOCs and flag undefined normalization"
   expect_true(is.finite(as.numeric(antitrust::calcProducerSurplus(fit, FALSE))))
 })
 
-test_that("real domain rejects output, Bertrand, and CES combinations", {
+test_that("real domain rejects output and CES combinations", {
   expect_error(
     core_fringe(c(1, 1.2), c(.2, .15), ownerPre = c("A", "B"),
                 corePre = "A", output = TRUE, price_domain = "real"),
-    "only input Logit Cournot"
-  )
-  expect_error(
-    stackelberg(c(1, 1.2), c(.2, .15), ownerPre = c("A", "B"),
-                leadersPre = "A", conduct = "bertrand", output = FALSE,
-                alpha = 1, price_domain = "real"),
-    "only input Logit Cournot"
+    "only input Logit Bertrand or Cournot"
   )
   expect_error(
     core_fringe(c(1, 1.2), c(.2, .15), ownerPre = c("A", "B"),
                 corePre = "A", demand = "ces", gamma = 2,
                 price_domain = "real"),
-    "only input Logit Cournot"
+    "only input Logit Bertrand or Cournot"
   )
 })
 

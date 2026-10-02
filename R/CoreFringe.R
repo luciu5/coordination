@@ -226,9 +226,12 @@ setClass(
 .cf_logit_root <- function(object, preMerger, subset, start = NULL) {
   st <- .cf_state(object, preMerger, subset); n <- length(object@shares); a <- abs(object@slopes$alpha)
   sigma <- if (isTRUE(object@output)) 1 else -1
+  real <- .coordination_real_object(object)
   if (is.null(start)) start <- if (preMerger) object@priceStart else object@pricePost
-  if (length(start) != n || any(!is.finite(start[subset])) || any(start[subset] <= 0)) start <- object@prices
-  start <- pmax(as.numeric(start[subset]), .Machine$double.eps^0.25)
+  if (length(start) != n || any(!is.finite(start[subset])) ||
+      (!real && any(start[subset] <= 0))) start <- object@prices
+  start <- as.numeric(start[subset])
+  if (!real) start <- pmax(start, .Machine$double.eps^0.25)
   target <- function(p) {
     full <- rep(NA_real_, n); full[subset] <- p
     s <- .cf_logit_shares(object, full, subset)
@@ -236,18 +239,20 @@ setClass(
     st$costs[subset] + sigma * z$h[subset] / a
   }
   foc <- function(x) {
-    p <- exp(x); tg <- try(target(p), silent = TRUE)
+    p <- if (real) x else exp(x)
+    tg <- try(target(p), silent = TRUE)
     if (inherits(tg, "try-error") || any(!is.finite(tg))) return(rep(1e6, length(p)))
     (p - tg) / pmax(abs(p), 1)
   }
   ctl <- object@control.equ; maxit <- as.integer(ctl$maxit %||% 500L); tol <- as.numeric(ctl$tol %||% 1e-11)
   if (!is.finite(maxit) || maxit < 20) maxit <- 500L; if (!is.finite(tol) || tol <= 0) tol <- 1e-11
-  sol <- try(nleqslv::nleqslv(log(start), foc, method = "Broyden",
+  initial <- if (real) start else log(start)
+  sol <- try(nleqslv::nleqslv(initial, foc, method = "Broyden",
                               control = list(ftol = tol, xtol = tol, maxit = maxit)), silent = TRUE)
   z <- if (!inherits(sol, "try-error") && is.finite(sol$termcd) && sol$termcd <= 2) sol$x else NULL
   if (is.null(z)) {
     bb <- try(BB::BBsolve(
-      log(start), foc, quiet = TRUE,
+      initial, foc, quiet = TRUE,
       control = .coordination_solver_control(ctl)
     ), silent = TRUE)
     if (!inherits(bb, "try-error") && is.finite(bb$convergence) && bb$convergence == 0) z <- bb$par
@@ -260,12 +265,21 @@ setClass(
     old <- sum(rr^2); step <- 1
     repeat { zn <- z + step * dz; rn <- foc(zn); if (all(is.finite(rn)) && sum(rn^2) <= old) { z <- zn; break }; step <- step / 2; if (step < 1 / 128) break }
   }
-  p <- exp(z); if (any(!is.finite(p)) || max(abs(foc(z)), na.rm = TRUE) > 2e-9)
+  p <- if (real) z else exp(z)
+  if (any(!is.finite(p)) || max(abs(foc(z)), na.rm = TRUE) > 2e-9)
     stop("CoreFringe Logit price equilibrium residual exceeds tolerance")
   p
 }
 
 .cf_logit_real_root <- function(object, preMerger, subset) {
+  if (identical(object@conduct, "bertrand")) {
+    st <- .cf_state(object, preMerger, subset)
+    start <- as.numeric(st$costs) - 1 / abs(object@slopes$alpha)
+    candidate <- object
+    candidate@control.equ <- .coordination_set_price_domain(
+      candidate@control.equ, "real")
+    return(.cf_logit_root(candidate, preMerger, subset, start = start))
+  }
   st <- .cf_state(object, preMerger, subset)
   z <- .coordination_real_quantity_state(
     object, st$costs, st$owner, st$core, subset, game = "core_fringe"
@@ -529,8 +543,7 @@ setMethod("calcPrices", "CoreFringeLogit", function(object, preMerger = TRUE, is
     p <- .cf_logit_real_root(object, preMerger, subset)
   } else {
     positive <- try(.cf_logit_root(object, preMerger, subset), silent = TRUE)
-    if (inherits(positive, "try-error") && object@conduct == "cournot" &&
-        !isTRUE(object@output)) {
+    if (inherits(positive, "try-error") && !isTRUE(object@output)) {
       real <- try(.cf_logit_real_root(object, preMerger, subset), silent = TRUE)
       .coordination_rethrow_or_classify(
         positive, real, object, preMerger, which(subset)

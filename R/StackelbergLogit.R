@@ -252,7 +252,8 @@ setClass(
 #' @param gamma Optional CES elasticity, which must exceed one.
 #' @param price_domain Rate domain. The default `"positive"` retains the
 #'   existing equilibrium path. `"real"` is supported only for input Logit
-#'   Cournot games and permits finite zero or negative counterfactual rates.
+#'   Bertrand and Cournot games and permits finite zero or negative
+#'   counterfactual rates.
 #' @param control.slopes,control.equ Named calibration and equilibrium solver
 #'   controls. Set code{control.equ$implicitCheck = FALSE} to skip the
 #'   optional nested implicit equilibrium diagnostic while retaining all
@@ -516,12 +517,15 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
 .sk_price_root <- function(object, preMerger, subset, start = NULL, ...) {
   n <- length(object@shares)
   st <- .sk_state(object, preMerger, subset)
+  real <- .coordination_real_object(object)
   if (is.null(start)) start <- if (preMerger) object@priceStart else {
     p <- object@pricePost
-    if (length(p) != n || any(!is.finite(p[subset]) | p[subset] <= 0)) object@priceStart else p
+    if (length(p) != n || any(!is.finite(p[subset])) ||
+        (!real && any(p[subset] <= 0))) object@priceStart else p
   }
   start <- as.numeric(start)[subset]
-  if (length(start) != sum(subset) || any(!is.finite(start)) || any(start <= 0)) start <- object@prices[subset]
+  if (length(start) != sum(subset) || any(!is.finite(start)) ||
+      (!real && any(start <= 0))) start <- object@prices[subset]
   costs <- st$costs[subset]
   beta <- .sk_beta(object)
   owner <- st$owner
@@ -537,26 +541,27 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
     costs + sign * h[subset] / abs(beta)
   }
   foc <- function(z) {
-    p <- exp(z)
-    if (any(!is.finite(p)) || any(p <= 0)) return(rep(1e6, length(p)))
+    p <- if (real) z else exp(z)
+    if (any(!is.finite(p)) || (!real && any(p <= 0))) return(rep(1e6, length(p)))
     tg <- try(target(p), silent = TRUE)
     if (inherits(tg, "try-error") || any(!is.finite(tg))) return(rep(1e6, length(p)))
     ## Negative cost/value primitives can imply a negative target during
     ## intermediate steps even when the equilibrium price is positive. The
     ## FOC remains well defined there; a logarithm of the target does not.
-    1 - tg / p
+    if (real) (p - tg) / pmax(abs(p), 1) else 1 - tg / p
   }
   ctl <- object@control.equ
   maxit <- as.integer(ctl$maxit %||% 300L)
   if (!is.finite(maxit) || maxit < 20) maxit <- 300L
   tol <- as.numeric(ctl$tol %||% 1e-10)
   if (!is.finite(tol) || tol <= 0) tol <- 1e-10
-  sol <- try(nleqslv::nleqslv(log(start), foc, method = "Broyden",
+  initial <- if (real) start else log(start)
+  sol <- try(nleqslv::nleqslv(initial, foc, method = "Broyden",
                               control = list(ftol = tol, maxit = maxit)), silent = TRUE)
   z <- if (!inherits(sol, "try-error") && is.finite(sol$termcd) && sol$termcd <= 2) sol$x else NULL
   if (is.null(z)) {
     bb <- try(BB::BBsolve(
-      log(start), foc, quiet = TRUE,
+      initial, foc, quiet = TRUE,
       control = .coordination_solver_control(ctl)
     ), silent = TRUE)
     if (!inherits(bb, "try-error") && is.finite(bb$convergence) && bb$convergence == 0) z <- bb$par
@@ -582,7 +587,7 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
       if (step < 1 / 128) break
     }
   }
-  p <- exp(z)
+  p <- if (real) z else exp(z)
   r <- foc(z)
   if (any(!is.finite(p)) || max(abs(r), na.rm = TRUE) > 2e-10) {
     stop("Stackelberg price equilibrium residual exceeds tolerance")
@@ -591,6 +596,12 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
 }
 
 .sk_logit_real_root <- function(object, preMerger, subset) {
+  if (identical(object@conduct, "bertrand")) {
+    candidate <- object
+    candidate@control.equ <- .coordination_set_price_domain(
+      candidate@control.equ, "real")
+    return(.sk_price_root(candidate, preMerger, subset))
+  }
   st <- .sk_state(object, preMerger, subset)
   z <- .coordination_real_quantity_state(
     object, st$costs, st$owner, st$leaders, subset, game = "stackelberg"
@@ -614,6 +625,8 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
 
 .sk_implicit_price_root <- function(object, preMerger, subset) {
   st <- .sk_state(object, preMerger, subset)
+  real_bertrand <- .coordination_real_object(object) &&
+    identical(object@conduct, "bertrand")
   li <- which(subset & st$owner %in% st$leaders)
   fi <- which(subset & !(st$owner %in% st$leaders))
   n <- length(object@shares); M <- object@mktSize
@@ -626,7 +639,8 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
   }
   if (object@conduct == "bertrand") {
     p0 <- if (preMerger) object@priceStart else object@pricePost
-    if (length(p0) != n || any(!is.finite(p0[li])) || any(p0[li] <= 0)) p0 <- object@prices
+    if (length(p0) != n || any(!is.finite(p0[li])) ||
+        (!real_bertrand && any(p0[li] <= 0))) p0 <- object@prices
     start <- p0[li]
   } else {
     s0 <- calcShares(object, preMerger, revenue = FALSE)
@@ -663,12 +677,14 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
       list(eq = rep(1e6, length(li)), p = rep(NA_real_, n), q = rep(NA_real_, n))
     } else z
   }
-  foc <- function(z) candidate(exp(z))$eq
-  sol <- try(nleqslv::nleqslv(log(start), foc, method = "Broyden",
+  action <- function(z) if (real_bertrand) z else exp(z)
+  initial <- if (real_bertrand) start else log(start)
+  foc <- function(z) candidate(action(z))$eq
+  sol <- try(nleqslv::nleqslv(initial, foc, method = "Broyden",
                               control = list(ftol = 1e-9, maxit = 500L)), silent = TRUE)
   solNeedsFallback <- inherits(sol, "try-error") || sol$termcd > 2 || any(!is.finite(sol$x))
   if (!solNeedsFallback) {
-    probe <- try(candidate(exp(sol$x)), silent = TRUE)
+    probe <- try(candidate(action(sol$x)), silent = TRUE)
     solNeedsFallback <- inherits(probe, "try-error") || any(!is.finite(probe$eq)) ||
       max(abs(probe$eq), na.rm = TRUE) > 2e-7
   }
@@ -676,11 +692,18 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
     ## The nested follower solve can make a Broyden step leave the admissible
     ## demand domain.  A bounded least-squares pass supplies a robust
     ## independent starting point for the same implicit equations.
-    lo <- rep(log(.Machine$double.eps^0.25), length(start))
-    hi <- rep(log(max(c(start, object@prices, 1), na.rm = TRUE) * 1e4), length(start))
-    opt <- try(stats::optim(log(start), function(z) sum(foc(z)^2),
-                            method = "L-BFGS-B", lower = lo, upper = hi,
-                            control = list(maxit = 1000L, factr = 1e7)), silent = TRUE)
+    if (real_bertrand) {
+      opt <- try(stats::optim(initial, function(z) sum(foc(z)^2),
+                              method = "BFGS", control = list(maxit = 1000L)),
+                 silent = TRUE)
+    } else {
+      lo <- rep(log(.Machine$double.eps^0.25), length(start))
+      hi <- rep(log(max(c(start, object@prices, 1), na.rm = TRUE) * 1e4), length(start))
+      opt <- try(stats::optim(initial, function(z) sum(foc(z)^2),
+                              method = "L-BFGS-B", lower = lo, upper = hi,
+                              control = list(maxit = 1000L, factr = 1e7)),
+                 silent = TRUE)
+    }
     if (inherits(opt, "try-error") || any(!is.finite(opt$par))) stop("implicit Stackelberg leader solver failed")
     sol <- list(x = opt$par, termcd = 1)
   }
@@ -703,7 +726,7 @@ setMethod("calcShares", "StackelbergLogit", function(object, preMerger = TRUE,
     }
   }
   sol$x <- zg
-  got <- candidate(exp(sol$x))
+  got <- candidate(action(sol$x))
   if (max(abs(got$eq), na.rm = TRUE) > 2e-7) stop("implicit Stackelberg leader residual exceeds tolerance")
   got$p[subset]
 }
@@ -739,8 +762,8 @@ setMethod("calcPrices", "StackelbergLogit", function(object, preMerger = TRUE,
       },
       silent = TRUE
     )
-    if (inherits(positive, "try-error") && object@conduct == "cournot" &&
-        !isTRUE(object@output) && method == "analytic") {
+    if (inherits(positive, "try-error") && !isTRUE(object@output) &&
+        method == "analytic") {
       real <- try(.sk_logit_real_root(object, preMerger, subset), silent = TRUE)
       .coordination_rethrow_or_classify(
         positive, real, object, preMerger, which(subset)
@@ -954,13 +977,19 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
     return(.coord_retained_followers(object, leaderActions, preMerger, start, subset))
   }
   st <- .sk_state(object, preMerger, subset)
+  real_bertrand <- .coordination_real_object(object) &&
+    identical(object@conduct, "bertrand")
   sigma <- if (isTRUE(object@output)) 1 else -1
   leaderProducts <- which(subset & st$owner %in% st$leaders)
   followerProducts <- which(subset & !(st$owner %in% st$leaders))
   if (length(leaderActions) == length(object@shares)) leaderActions <- leaderActions[leaderProducts]
   leaderActions <- as.numeric(leaderActions)
-  if (length(leaderActions) != length(leaderProducts) || any(!is.finite(leaderActions)) || any(leaderActions <= 0)) {
-    stop("leaderActions must be positive actions for every active leader product")
+  if (length(leaderActions) != length(leaderProducts) ||
+      any(!is.finite(leaderActions)) ||
+      (!real_bertrand && any(leaderActions <= 0))) {
+    stop(if (real_bertrand) {
+      "leaderActions must be finite rates for every active leader product"
+    } else "leaderActions must be positive actions for every active leader product")
   }
   if (!length(followerProducts)) {
     if (object@conduct == "bertrand") {
@@ -1002,12 +1031,15 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
   }
   if (is.null(start)) {
     start <- if (object@conduct == "bertrand") st$prices[followerProducts] else object@mktSize * calcShares(object, preMerger, revenue = FALSE)[followerProducts]
-    if (any(!is.finite(start)) || any(start <= 0)) start <- object@prices[followerProducts]
+    if (any(!is.finite(start)) || (!real_bertrand && any(start <= 0)))
+      start <- object@prices[followerProducts]
   }
-  start <- pmax(as.numeric(start), .Machine$double.eps^0.25)
+  start <- as.numeric(start)
+  if (!real_bertrand) start <- pmax(start, .Machine$double.eps^0.25)
   if (length(start) != length(followerProducts)) stop("start must match follower products")
+  action <- function(z) if (real_bertrand) z else exp(z)
   fixedRaw <- function(z) {
-    a <- exp(z)
+    a <- action(z)
     if (object@conduct == "bertrand") {
       p <- rep(NA_real_, length(subset)); p[leaderProducts] <- leaderActions; p[followerProducts] <- a
       this <- object
@@ -1026,7 +1058,7 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
   fixed <- function(z) {
     p <- rep(NA_real_, length(subset))
     p[leaderProducts] <- leaderActions
-    p[followerProducts] <- exp(z)
+    p[followerProducts] <- action(z)
     if (any(!is.finite(p[subset]))) return(rep(1e6, length(followerProducts)))
     this <- object
     if (!preMerger) this@subset <- subset
@@ -1036,7 +1068,8 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
     weightedMargin <- tapply(mu[subset] * s[subset], st$owner[subset], sum)
     1 + .sk_beta(object) * (mu[followerProducts] - weightedMargin[st$owner[followerProducts]])
   }
-  sol <- try(nleqslv::nleqslv(log(start), function(z) fixed(z), method = "Broyden",
+  initial <- if (real_bertrand) start else log(start)
+  sol <- try(nleqslv::nleqslv(initial, function(z) fixed(z), method = "Broyden",
                               control = list(ftol = 1e-14, xtol = 1e-14, maxit = 400L)), silent = TRUE)
   if (inherits(sol, "try-error") || any(!is.finite(sol$x)) ||
       (sol$termcd > 2 && (is.null(sol$fvec) || max(abs(sol$fvec), na.rm = TRUE) > 1e-9))) {
@@ -1061,7 +1094,7 @@ stackelberg_followers <- function(object, leaderActions, preMerger = TRUE, start
     }
   }
   sol$x <- zz
-  followers <- exp(sol$x)
+  followers <- action(sol$x)
   if (object@conduct == "bertrand") {
     p <- rep(NA_real_, length(subset)); p[leaderProducts] <- leaderActions; p[followerProducts] <- followers
     this <- object; if (preMerger) this@pricePre <- p else this@pricePost <- p
@@ -1146,8 +1179,11 @@ stackelberg_residuals <- function(object, preMerger = TRUE,
     if (is.null(prices)) prices <- st$prices[subset] else {
       prices <- as.numeric(prices)
       if (length(prices) == n) prices <- prices[subset]
-      if (length(prices) != sum(subset) || any(!is.finite(prices)) || any(prices <= 0)) {
-        stop("prices must be positive and have full or active-product length")
+      if (length(prices) != sum(subset) || any(!is.finite(prices)) ||
+          (!.coordination_real_object(object) && any(prices <= 0))) {
+        stop(if (.coordination_real_object(object)) {
+          "prices must be finite and have full or active-product length"
+        } else "prices must be positive and have full or active-product length")
       }
     }
     full <- st$prices
