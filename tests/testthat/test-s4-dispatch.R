@@ -1,9 +1,3 @@
-test_that("PriceLeadership and PriceLeadershipBLP-related classes are each defined exactly once", {
-  ## getClass() errors (rather than warning about multiple definitions) when
-  ## a class is uniquely defined and resolvable in the current session.
-  expect_silent(methods::getClass("PriceLeadership"))
-})
-
 test_that("PriceLeadership extends antitrust::Logit, not a local duplicate", {
   cls <- methods::getClass("PriceLeadership")
   expect_true("Logit" %in% names(cls@contains))

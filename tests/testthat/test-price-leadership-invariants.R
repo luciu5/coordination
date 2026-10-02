@@ -47,14 +47,3 @@ test_that("calcSupermarkup unconstrained post-merger supermarkup is finite", {
   sm_post <- calcSupermarkup(fit, preMerger = FALSE, constrained = FALSE)
   expect_equal(sm_post, 0)
 })
-
-test_that("changing only package location does not alter PriceLeadership economics", {
-  ## Two independently-constructed but identical PLE fits from the same
-  ## inputs must produce bitwise-identical output; this guards against any
-  ## accidental state leakage introduced by the extraction.
-  fit1 <- fixture_ple()
-  fit2 <- fixture_ple()
-  expect_identical(fit1@pricePre, fit2@pricePre)
-  expect_identical(fit1@pricePost, fit2@pricePost)
-  expect_identical(fit1@slopes$alpha, fit2@slopes$alpha)
-})

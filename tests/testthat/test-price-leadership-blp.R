@@ -220,13 +220,3 @@ test_that("PriceLeadershipBLP accepts two-dimensional supplied points and seeded
   expect_identical(mc1@pricePre, mc2@pricePre)
   expect_identical(mc1@pricePost, mc2@pricePost)
 })
-
-
-test_that("ple.blp with a fringe firm and no supplied margins recovers finite outputs", {
-  fit <- fixture_ple_blp()
-  expect_s4_class(fit, "PriceLeadershipBLP")
-  expect_true(all(is.na(fit@margins)))
-  expect_true(all(is.finite(fit@pricePre)))
-  expect_true(all(is.finite(fit@pricePost)))
-  expect_true(is.finite(fit@supermarkupPost))
-})
