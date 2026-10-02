@@ -1,26 +1,41 @@
-test_that("calcProducerSurplusGrimTrigger returns expected structure", {
-  fit <- fixture_bertrand()
-  gt <- calcProducerSurplusGrimTrigger(
-    fit, coalition = 1:2, discount = c(0.9, 0.9, 0.5, 0.5), preMerger = TRUE
+test_that("firm-level Grim Trigger IC matches the deviation threshold in both ownership states", {
+  fit <- fixture_bertrand(
+    ownerPre = c("A", "A", "B", "C"),
+    ownerPost = c("A", "A", "B", "B")
   )
-  expect_s3_class(gt, "data.frame")
-  expect_true(all(c("Coalition", "Discount", "Coord", "Defect", "Punish", "IC") %in% names(gt)))
-})
-
-test_that("IC holds under a high discount factor (patient firms sustain coordination)", {
-  fit <- fixture_bertrand()
-  gt <- calcProducerSurplusGrimTrigger(
-    fit, coalition = 1:2, discount = c(0.95, 0.95, 0.5, 0.5), preMerger = TRUE
-  )
-  expect_true(all(gt$IC))
-})
-
-test_that("IC fails under a very low discount factor (impatient firms defect)", {
-  fit <- fixture_bertrand()
-  gt <- calcProducerSurplusGrimTrigger(
-    fit, coalition = 1:2, discount = c(0.01, 0.01, 0.5, 0.5), preMerger = TRUE
-  )
-  expect_true(all(!gt$IC))
+  for (pre in c(TRUE, FALSE)) {
+    owner <- if (pre) c("A", "A", "B", "C") else c("A", "A", "B", "B")
+    names(owner) <- fit@labels
+    prices <- if (pre) fit@pricePre else fit@pricePost
+    costs <- if (pre) fit@mcPre else fit@mcPost
+    utility <- fit@slopes$meanval +
+      fit@slopes$alpha * (prices - fit@priceOutside)
+    quantity <- fit@mktSize * exp(utility) / (1 + sum(exp(utility)))
+    manual_punish <- (prices - costs) * quantity
+    for (discount in c(.05, .8)) {
+      gt <- calcProducerSurplusGrimTrigger(
+        fit, coalition = c(1, 3), discount = rep(discount, 4), preMerger = pre
+      )
+      involved <- owner[rownames(gt)]
+      expect_equal(nrow(gt), if (pre) 3L else 4L)
+      # Independently price the punishment payoff from Logit quantities.
+      expect_equal(unname(gt$Punish),
+        unname(manual_punish[rownames(gt)]), tolerance = 1e-8)
+      for (firm in unique(involved)) {
+        rows <- which(involved == firm)
+        coord <- sum(gt$Coord[rows])
+        defect <- sum(gt$Defect[rows])
+        punish <- sum(gt$Punish[rows])
+        expect_gt(defect - punish, 0)
+        # From C/(1-d) >= D + d P/(1-d): d >= (D-C)/(D-P).
+        threshold <- (defect - coord) / (defect - punish)
+        expected <- discount >= threshold
+        expect_identical(unique(gt$IC[rows]), expected)
+      }
+      if (discount == .8) expect_true(all(gt$IC))
+      if (discount == .05) expect_true(any(!gt$IC))
+    }
+  }
 })
 
 test_that("Coord/Defect/Punish satisfy pi_Coord >= pi_Punish (coordination weakly dominates static Bertrand)", {
@@ -39,16 +54,6 @@ test_that("Defect profits are at least as large as Coord profits in the deviatio
     fit, coalition = 1:2, discount = c(0.9, 0.9, 0.5, 0.5), preMerger = TRUE
   )
   expect_true(all(gt$Defect >= gt$Coord - 1e-8))
-})
-
-test_that("post-merger Grim Trigger analysis runs and returns finite values", {
-  fit <- fixture_bertrand()
-  gt <- calcProducerSurplusGrimTrigger(
-    fit, coalition = 1:2, discount = c(0.9, 0.9, 0.5, 0.5), preMerger = FALSE
-  )
-  expect_true(all(is.finite(gt$Coord)))
-  expect_true(all(is.finite(gt$Defect)))
-  expect_true(all(is.finite(gt$Punish)))
 })
 
 test_that("isCollusion = TRUE recalibrates demand under the collusive ownership assumption", {

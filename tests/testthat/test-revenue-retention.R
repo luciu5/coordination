@@ -126,6 +126,18 @@ test_that("mixed-retention simulation handles ownership changes and product exit
     expect_true(all(is.finite(out@pricePost[1:3])))
     expect_true(is.na(out@pricePost[4]))
     expect_equal(out@ownerPost, .sk_owner_matrix(args$ownerPost))
+
+    # All active products now belong to A. Their retained portfolio profit
+    # must be stationary after excluding product 4 from the Logit denominator.
+    active <- out@subset
+    profit <- function(prices) {
+      utility <- out@slopes$meanval[active] +
+        out@slopes$alpha * (prices - out@priceOutside)
+      quantity <- out@mktSize * exp(utility) / (1 + sum(exp(utility)))
+      sum(args$revenueRetentionPost[active] *
+        (prices - out@mcPost[active]) * quantity)
+    }
+    expect_lt(max(abs(numDeriv::grad(profit, out@pricePost[active]))), 1e-7)
   }
 })
 
