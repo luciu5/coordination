@@ -12,7 +12,7 @@ on:
         type: boolean
       antitrust_ref:
         description: 'Development bootstrap ref (used when release certification is off)'
-        default: 'refactor'
+        default: 'master'
         type: string
       antitrust_release_sha:
         description: 'Full 40-character antitrust candidate SHA for release certification'
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: luciu5/antitrust
-          ref: ${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'refactor' }}
+          ref: ${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'master' }}
           path: dependency-antitrust
 
       - name: Resolve candidate dependency SHA
@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           sha="$(git -C dependency-antitrust rev-parse HEAD)"
-          requested_ref="${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'refactor' }}"
+          requested_ref="${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'master' }}"
           if [[ "${{ inputs.release_certification && 'true' || 'false' }}" == true && "$sha" != "${requested_ref,,}" ]]; then
             echo "Checked-out antitrust SHA $sha does not match requested candidate $requested_ref" >&2
             exit 1

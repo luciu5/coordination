@@ -23,7 +23,7 @@ This package currently implements two coordinated-effects models:
 # Development bootstrap refs; CI records each resolved commit.
 devtools::install_github(
   "luciu5/antitrust",
-  ref = "refactor"
+  ref = "master"
 )
 devtools::install_github(
   "luciu5/coordination",
