@@ -186,6 +186,28 @@ setClass(
   }
 }
 
+#' Stackelberg CES firm-margin multipliers
+#'
+#' Compute the CES firm-level margin multipliers used by the Stackelberg
+#' equilibrium equations. This helper is public so downstream packages can
+#' reuse the same validated equilibrium coefficients.
+#'
+#' @param r Product revenue shares, including only positive shares for active
+#'   products.
+#' @param owner One firm ID per product.
+#' @param leaders Firm IDs that choose in the first stage.
+#' @param gamma CES elasticity, strictly greater than one.
+#' @param conduct Either \code{"bertrand"} or \code{"cournot"}.
+#' @param subset Logical vector indicating active products.
+#' @return A list with product-level \code{margins}, firm revenue shares
+#'   \code{R}, the outside revenue share \code{r0}, and conduct-specific
+#'   response diagnostics.
+#' @export
+stackelberg_ces_multipliers <- function(r, owner, leaders, gamma, conduct,
+                                        subset) {
+  .ces_multipliers(r, owner, leaders, gamma, conduct, subset)
+}
+
 .ces_calibration <- function(object, prices, margins, owner, leaders, weights,
                               fixed = NULL, control = list()) {
   n <- length(prices)

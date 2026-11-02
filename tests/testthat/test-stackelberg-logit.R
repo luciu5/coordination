@@ -76,14 +76,36 @@ test_that("Cournot and input sign cases retain positive actions", {
   }
 })
 
-test_that("WLS uses all usable partial margins and fixed alpha bypasses calibration", {
+test_that("public Logit multipliers preserve audited WLS and partial-margin equations", {
   prices <- c(10, 12, 11, 9)
   shares <- c(.25, .20, .18, .17)
   owner <- c("A", "B", "C", "D")
-  ## Independent audited h values for one leader and three followers.
+  ## Migration parity A (permanent): a private-helper-only or incorrectly
+  ## forwarded public API would change the leader's multiproduct FOC and the
+  ## demand coefficient recovered from partial margins.
   fs <- shares
   B <- sum(fs[-1]^2 / (1 - fs[-1] + fs[-1]^2))
-  h <- c(1 / (1 - (1 / (1 - B)) * fs[1]), 1 / (1 - fs[-1]))
+  h_audited <- c(1 / (1 - (1 / (1 - B)) * fs[1]), 1 / (1 - fs[-1]))
+  h <- coordination::stackelberg_logit_h(
+    shares, owner, leaders = "A", conduct = "bertrand"
+  )
+  expect_equal(unname(h), unname(h_audited), tolerance = 1e-14)
+
+  active <- c(TRUE, TRUE, TRUE, FALSE)
+  active_shares <- shares[active]
+  active_B <- sum(active_shares[-1]^2 /
+                    (1 - active_shares[-1] + active_shares[-1]^2))
+  subset_audited <- c(
+    1 / (1 - (1 / (1 - active_B)) * active_shares[1]),
+    1 / (1 - active_shares[-1]), NA_real_
+  )
+  expect_equal(
+    coordination::stackelberg_logit_h(
+      shares, owner, leaders = "A", conduct = "bertrand", subset = active
+    ),
+    subset_audited,
+    tolerance = 1e-14
+  )
   obs <- c(.4, .38, NA, .25)
   w <- c(1, 2, 3, 4)
   lambda <- sum(w[is.finite(obs)] * (h / prices)[is.finite(obs)] * obs[is.finite(obs)]) /

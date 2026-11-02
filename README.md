@@ -20,10 +20,21 @@ This package currently implements two coordinated-effects models:
 ## Installation
 
 ```r
-# install.packages("devtools")
-devtools::install_github("luciu5/antitrust")
-devtools::install_github("luciu5/coordination")
+# Development bootstrap refs; CI records each resolved commit.
+devtools::install_github(
+  "luciu5/antitrust",
+  ref = "refactor"
+)
+devtools::install_github(
+  "luciu5/coordination",
+  ref = "main"
+)
 ```
+
+The dependency minimum for the coordinated release is `antitrust >= 0.99.43`.
+For release certification, select **Release certification** in the workflow and
+provide the full 40-character antitrust candidate SHA. The workflow rejects
+branch refs in that mode and records both requested and resolved revisions.
 
 ## Price Leadership Equilibrium
 
@@ -83,7 +94,7 @@ calcSupermarkup(fit, constrained = FALSE)  # unconstrained (full-collusion) supe
 addition to the coordination-specific ones (`calcSlack`, `calcSupermarkup`,
 `calcPriceLeadershipParams`).
 
-## Firm-level Stackelberg Logit
+## Firm-level Stackelberg Logit and CES
 
 `coordination::stackelberg()` provides a separate noncooperative
 firm-level Stackelberg game for Logit or output-market CES demand. It accepts
@@ -91,7 +102,8 @@ explicit pre/post firm-ID vectors and leader sets, supports Bertrand and
 Cournot conduct, and keeps calibrated demand and baseline costs fixed in
 `stackelberg_simulate()`.
 The constructor requires unconditional product shares with a positive outside
-share and `normIndex = NA`; `demand = "ces"` is reserved for a later extension.
+share and `normIndex = NA` for Logit. CES uses unconditional revenue shares,
+inside expenditure, and a positive outside-good price.
 
 ```r
 fit <- stackelberg(
@@ -106,9 +118,12 @@ stackelberg_response(fit, method = "implicit")
 ```
 
 For CES, pass `demand = "ces"`, a structural `gamma > 1`, and a positive
-`priceOutside`. CES shares are unconditional revenue shares and `insideSize`
-is inside expenditure. CES calibration uses all usable positive observed
-margins when `gamma` is omitted; CES input markets are not supported.
+`priceOutside`. CES calibration uses all usable positive observed margins
+when `gamma` is omitted; CES input markets are not supported.
+
+The public `stackelberg_logit_h()` and `stackelberg_ces_multipliers()` helpers
+expose the same validated firm-level multipliers used by the equilibrium
+solvers, including their multiproduct ownership and leader-response terms.
 
 `stackelberg_followers()` exposes actual price or quantity follower choices,
 while `stackelberg_residuals()` reports reduced leader and follower FOCs.

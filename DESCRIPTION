@@ -1,8 +1,8 @@
 Package: coordination
 Type: Package
 Title: Coordinated Effects Models for Antitrust Analysis
-Version: 0.0.0.9006
-Date: 2026-09-09
+Version: 0.1.0
+Date: 2026-11-01
 Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com",
                   role = c("aut", "cre")),
              person("David", "Benson",
@@ -10,9 +10,9 @@ Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com
                   )
 Maintainer: Charles Taragin <ctaragin+antitrustr@gmail.com>
 Author: Charles Taragin [aut, cre], David Benson [ctb]
-Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.41)
+Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.43)
 Suggests: testthat
-Remotes: luciu5/antitrust@refactor
+Remotes: luciu5/antitrust@3d11eff0b2fce2fd0e37024b2859ab9cd4dd8d53
 Encoding: UTF-8
 Description: Coordinated-effects models for merger analysis built on the
     structural demand and cost calibration infrastructure provided by the

@@ -3,6 +3,21 @@ name: R-CMD-check
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_certification:
+        description: 'Require an explicit full SHA for every dependency'
+        required: false
+        default: false
+        type: boolean
+      antitrust_ref:
+        description: 'Development bootstrap ref (used when release certification is off)'
+        default: 'refactor'
+        type: string
+      antitrust_release_sha:
+        description: 'Full 40-character antitrust candidate SHA for release certification'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,55 +38,77 @@ jobs:
         with:
           r-version: ${{ matrix.r }}
 
-      - name: Resolve antitrust refactor SHA
+      - name: Validate release dependency input
+        env:
+          RELEASE_CERTIFICATION: ${{ inputs.release_certification && 'true' || 'false' }}
+          ANTITRUST_RELEASE_SHA: ${{ inputs.antitrust_release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_CERTIFICATION" == true && ! "$ANTITRUST_RELEASE_SHA" =~ ^[[:xdigit:]]{40}$ ]]; then
+            echo "Release certification requires antitrust_release_sha as an explicit full 40-character SHA; branch refs such as main/refactor are not accepted." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: luciu5/antitrust
+          ref: ${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'refactor' }}
+          path: dependency-antitrust
+
+      - name: Resolve candidate dependency SHA
         id: antitrust
         shell: bash
         run: |
           set -euo pipefail
-          sha="$(git ls-remote https://github.com/luciu5/antitrust.git refs/heads/refactor | awk 'NR == 1 { print $1 }')"
-          test "${#sha}" -eq 40
+          sha="$(git -C dependency-antitrust rev-parse HEAD)"
+          requested_ref="${{ inputs.release_certification && inputs.antitrust_release_sha || inputs.antitrust_ref || 'refactor' }}"
+          if [[ "${{ inputs.release_certification && 'true' || 'false' }}" == true && "$sha" != "${requested_ref,,}" ]]; then
+            echo "Checked-out antitrust SHA $sha does not match requested candidate $requested_ref" >&2
+            exit 1
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           {
             echo "coordination: $(git rev-parse HEAD)"
-            echo "antitrust refactor: $sha"
-          } | tee dependency-shas.txt >> "$GITHUB_STEP_SUMMARY"
+            echo "release_certification=${{ inputs.release_certification && 'true' || 'false' }}"
+            echo "antitrust_requested_ref=$requested_ref"
+            echo "antitrust resolved: $sha"
+          } | tee "$RUNNER_TEMP/dependency-shas.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify DESCRIPTION Remote for release certification
+        if: inputs.release_certification == true
+        env:
+          ANTITRUST_RELEASE_SHA: ${{ inputs.antitrust_release_sha }}
+        shell: Rscript {0}
+        run: |
+          desc <- read.dcf("DESCRIPTION")[1L, ]
+          entries <- trimws(strsplit(desc[["Remotes"]], ",", fixed = TRUE)[[1L]])
+          expected <- paste0("luciu5/antitrust@", tolower(Sys.getenv("ANTITRUST_RELEASE_SHA")))
+          if (!identical(entries, expected)) stop("DESCRIPTION Remotes must pin the explicit antitrust release SHA")
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          needs: check
-          extra-packages: any::rcmdcheck
+          packages: any::BB, any::numDeriv, any::nleqslv, any::SQUAREM, any::testthat, any::rcmdcheck
 
-      - name: Install exact antitrust refactor
+      - name: Install selected antitrust revision
         env:
           ANTITRUST_SHA: ${{ steps.antitrust.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          checkout_dir="$(mktemp -d)"
-          git clone --no-checkout https://github.com/luciu5/antitrust.git "$checkout_dir"
-          git -C "$checkout_dir" checkout --detach "$ANTITRUST_SHA"
+          checkout_dir="$GITHUB_WORKSPACE/dependency-antitrust"
           checked_out_sha="$(git -C "$checkout_dir" rev-parse HEAD)"
           if [[ "$checked_out_sha" != "$ANTITRUST_SHA" ]]; then
             echo "::error::Checked-out antitrust SHA $checked_out_sha does not match $ANTITRUST_SHA" >&2
             exit 1
           fi
-          Rscript --vanilla - "$checkout_dir" <<'RSCRIPT'
-          args <- commandArgs(trailingOnly = TRUE)
-          desc <- read.dcf(file.path(args[[1]], "DESCRIPTION"))[1, ]
-          imports <- desc[["Imports"]]
-          if (!is.na(imports) && nzchar(imports)) {
-              packages <- trimws(strsplit(imports, ",", fixed = TRUE)[[1]])
-              packages <- sub("\\s*\\(.*$", "", packages)
-              packages <- packages[nzchar(packages)]
-              missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
-              if (length(missing)) {
-                  install.packages(missing, repos = "https://cloud.r-project.org")
-              }
-          }
-          RSCRIPT
           R CMD INSTALL --no-multiarch "$checkout_dir"
           line="antitrust installed from verified checkout SHA: $checked_out_sha"
-          echo "$line" | tee -a dependency-shas.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "$line" | tee -a "$RUNNER_TEMP/dependency-shas.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ inputs.release_certification && 'true' || 'false' }}" == true ]]; then
+            Rscript --vanilla -e 'stopifnot(utils::packageVersion("antitrust") >= "0.99.43")'
+          fi
+          mv "$checkout_dir" "$RUNNER_TEMP/coordination-checked-core"
 
       - name: Check package
         run: |
@@ -82,4 +119,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dependency-shas
-          path: dependency-shas.txt
+          path: ${{ runner.temp }}/dependency-shas.txt

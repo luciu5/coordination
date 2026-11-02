@@ -134,6 +134,26 @@ setClass(
   h
 }
 
+#' Stackelberg Logit firm-action multipliers
+#'
+#' Compute the closed-form product-level action multipliers used by the
+#' Stackelberg Logit best responses. This helper is public so downstream
+#' packages can reuse the same validated equilibrium coefficients.
+#'
+#' @param shares Unconditional product shares, with a positive outside share.
+#' @param owner One firm ID per product.
+#' @param leaders Firm IDs that choose in the first stage.
+#' @param conduct Either \code{"bertrand"} or \code{"cournot"}.
+#' @param subset Logical vector indicating active products.
+#' @return A numeric vector of product-level action multipliers; inactive
+#'   products are \code{NA}.
+#' @export
+stackelberg_logit_h <- function(shares, owner, leaders,
+                                conduct = c("bertrand", "cournot"),
+                                subset = rep(TRUE, length(shares))) {
+  .sk_h(shares, owner, leaders, conduct, subset)
+}
+
 .sk_margin_from_h <- function(h, prices, alpha) h / (alpha * prices)
 
 .sk_beta <- function(object) {
