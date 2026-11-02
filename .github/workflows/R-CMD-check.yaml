@@ -1,5 +1,5 @@
 name: R-CMD-check
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('certification-{0}-{1}', inputs.release_certification, inputs.antitrust_release_sha) || github.event_name }}
+run-name: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/') && format('release-certification-{0}', github.sha) || github.event_name == 'workflow_dispatch' && format('certification-{0}-{1}', inputs.release_certification, inputs.antitrust_release_sha) || github.event_name }}
 
 on:
   push:
@@ -27,6 +27,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     name: R ${{ matrix.r }}
+    env:
+      RELEASE_PIN_BUILD: ${{ (inputs.release_certification == true) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/') || startsWith(github.base_ref, 'release/'))) }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,10 +47,6 @@ jobs:
           RELEASE_CERTIFICATION: ${{ inputs.release_certification && 'true' || 'false' }}
           ANTITRUST_RELEASE_SHA: ${{ inputs.antitrust_release_sha }}
           ANTITRUST_DEVELOPMENT_REF: ${{ inputs.antitrust_ref || 'master' }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-          EVENT_HEAD_REF: ${{ github.head_ref }}
-          EVENT_BASE_REF: ${{ github.base_ref }}
         shell: bash
         run: |
           set -euo pipefail
@@ -58,22 +56,22 @@ jobs:
               exit 1
             fi
             selected_ref="${ANTITRUST_RELEASE_SHA,,}"
-          elif [[ ( "$EVENT_NAME" == push && "$EVENT_REF" == refs/heads/release/* ) || ( "$EVENT_NAME" == pull_request && ( "$EVENT_HEAD_REF" == release/* || "$EVENT_BASE_REF" == release/* ) ) ]]; then
+          elif [[ "$RELEASE_PIN_BUILD" == true ]]; then
             selected_ref="$(Rscript --vanilla -e '
               desc <- read.dcf("DESCRIPTION")[1L, ]
               remote_field <- desc[["Remotes"]]
-              if (is.na(remote_field)) stop("Release-branch pushes require a full-SHA luciu5/antitrust pin in DESCRIPTION Remotes")
+              if (is.na(remote_field)) stop("Release-pin builds require a full-SHA luciu5/antitrust pin in DESCRIPTION Remotes")
               remotes <- trimws(strsplit(remote_field, ",", fixed = TRUE)[[1L]])
               pins <- grep("^luciu5/antitrust@[[:xdigit:]]{40}$", remotes, value = TRUE)
-              if (length(pins) != 1L || length(remotes) != 1L) stop("Release-branch pushes require exactly one full-SHA luciu5/antitrust pin in DESCRIPTION Remotes")
+              if (length(pins) != 1L || length(remotes) != 1L) stop("Release-pin builds require exactly one full-SHA luciu5/antitrust pin in DESCRIPTION Remotes")
               cat(sub("^luciu5/antitrust@", "", pins[[1L]]))
             ')"
             echo "Using the exact antitrust SHA from DESCRIPTION Remotes: $selected_ref"
           else
             selected_ref="$ANTITRUST_DEVELOPMENT_REF"
           fi
-          if [[ ! "$selected_ref" =~ ^[[:xdigit:]]{40}$ && "$RELEASE_CERTIFICATION" == true ]]; then
-            echo "Certification dependency ref is not a full 40-character SHA: $selected_ref" >&2
+          if [[ "$RELEASE_PIN_BUILD" == true && ! "$selected_ref" =~ ^[[:xdigit:]]{40}$ ]]; then
+            echo "Release-pin dependency ref is not a full 40-character SHA: $selected_ref" >&2
             exit 1
           fi
           echo "ref=$selected_ref" >> "$GITHUB_OUTPUT"
@@ -99,6 +97,7 @@ jobs:
           {
             echo "coordination: $(git rev-parse HEAD)"
             echo "release_certification=${{ inputs.release_certification && 'true' || 'false' }}"
+            echo "release_pin_build=$RELEASE_PIN_BUILD"
             echo "antitrust_requested_ref=$ANTITRUST_REF"
             echo "antitrust resolved: $sha"
           } | tee "$RUNNER_TEMP/dependency-shas.txt" >> "$GITHUB_STEP_SUMMARY"
@@ -135,9 +134,16 @@ jobs:
           R CMD INSTALL --no-multiarch "$checkout_dir"
           line="antitrust installed from verified checkout SHA: $checked_out_sha"
           echo "$line" | tee -a "$RUNNER_TEMP/dependency-shas.txt" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ inputs.release_certification && 'true' || 'false' }}" == true ]]; then
-            Rscript --vanilla -e 'stopifnot(utils::packageVersion("antitrust") >= "0.99.43")'
-          fi
+          Rscript --vanilla - "$checkout_dir" "$RELEASE_PIN_BUILD" <<'RSCRIPT'
+          args <- commandArgs(trailingOnly = TRUE)
+          expected <- unname(read.dcf(file.path(args[[1L]], "DESCRIPTION"))[1L, "Version"])
+          actual <- as.character(utils::packageVersion("antitrust"))
+          stopifnot(identical(actual, expected))
+          if (identical(args[[2L]], "true")) {
+            stopifnot(utils::packageVersion("antitrust") >= "0.99.43")
+          }
+          cat("antitrust DCF/installed version:", expected, actual, "\n")
+          RSCRIPT
 
       - name: Check package
         run: |
