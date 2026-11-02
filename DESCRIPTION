@@ -12,7 +12,7 @@ Maintainer: Charles Taragin <ctaragin+antitrustr@gmail.com>
 Author: Charles Taragin [aut, cre], David Benson [ctb]
 Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.43)
 Suggests: testthat
-Remotes: luciu5/antitrust@3d11eff0b2fce2fd0e37024b2859ab9cd4dd8d53
+Remotes: luciu5/antitrust@abc8f9457cc9cbb2e3f252c6b82fe5b87da3dd79
 Encoding: UTF-8
 Description: Coordinated-effects models for merger analysis built on the
     structural demand and cost calibration infrastructure provided by the
