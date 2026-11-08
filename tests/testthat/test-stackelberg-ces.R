@@ -89,6 +89,35 @@ test_that("CES multiproduct leaders and followers have product-specific response
   expect_lt(stackelberg_residuals(fit)$max, 1e-7)
 })
 
+test_that("public CES multipliers preserve multiproduct margin identities", {
+  ## Migration parity A (permanent): incorrect follower aggregation changes a
+  ## leader's tariff-reuse margin even when single-product tests still pass.
+  r <- c(.20, .10, .15, .15)
+  owner <- c("A", "A", "B", "C")
+  leaders <- "A"
+  active <- rep(TRUE, 4)
+
+  bertrand <- coordination::stackelberg_ces_multipliers(
+    r, owner, leaders, gamma = 2, conduct = "bertrand", subset = active
+  )
+  expect_equal(unname(bertrand$margins),
+               c(6710 / 11353, 6710 / 11353, 20 / 37, 20 / 37),
+               tolerance = 1e-14)
+  expect_equal(unname(bertrand$R), c(.30, .15, .15), tolerance = 1e-15)
+  expect_equal(bertrand$r0, .40, tolerance = 0)
+  expect_equal(bertrand$B, 18 / 689, tolerance = 1e-15)
+  expect_equal(bertrand$phi, 689 / 671, tolerance = 1e-14)
+
+  cournot <- coordination::stackelberg_ces_multipliers(
+    r, owner, leaders, gamma = 2, conduct = "cournot", subset = active
+  )
+  expect_equal(unname(cournot$margins),
+               c(1915 / 3242, 1915 / 3242, 31 / 56, 31 / 56),
+               tolerance = 1e-14)
+  expect_equal(cournot$C, 249 / 1372, tolerance = 1e-14)
+  expect_equal(cournot$b, 5 / 14, tolerance = 1e-15)
+})
+
 test_that("CES direct leader gradient and actual follower optimization agree", {
   fit <- ces_fixture(gamma = 2, conduct = "cournot")
   q0 <- fit@mktSize * fit@shares[1] / fit@prices[1]
