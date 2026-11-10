@@ -42,6 +42,34 @@ version-compatible packages; release certification is described separately below
 The role games are separate from coordinated PLE and from antitrust's legacy
 quantity Stackelberg model. Their examples use explicit firm and role IDs.
 
+## A small ownership scenario
+
+This illustrative core-fringe game has two strategic core firms and two firms
+using the atomistic MonCom fringe condition. A acquires B; C and D remain fringe.
+Prices are currency per unit, and unconditional quantity shares sum to .80,
+leaving a .20 outside share. This is a deterministic scenario, not an estimate
+of whether coordination occurs.
+
+```r
+library(coordination)
+fit <- coordination::core_fringe(
+  prices = c(10, 12, 11, 9), shares = c(.25, .20, .18, .17),
+  margins = c(.40, .38, .35, .25), ownerPre = c("A", "B", "C", "D"),
+  corePre = c("A", "B"), conduct = "bertrand", insideSize = 1000
+)
+merger <- coordination::core_fringe_simulate(
+  fit, ownerPost = c("A", "A", "C", "D"), corePost = "A"
+)
+data.frame(
+  price_pre = antitrust::calcPrices(fit, preMerger = TRUE),
+  price_post = antitrust::calcPrices(merger, preMerger = FALSE)
+)
+```
+
+Read price changes relative to each product's fitted pre-merger price. The
+[role-games guide](vignettes/role-games.Rmd) explains the fringe assumption,
+explicit post-merger role IDs and equilibrium diagnostics.
+
 ## Task guides
 
 The source guides remain available while rendered documentation is prepared.
