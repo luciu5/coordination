@@ -11,7 +11,8 @@ Authors@R: c(person("Charles", "Taragin", email = "ctaragin+antitrustr@gmail.com
 Maintainer: Charles Taragin <ctaragin+antitrustr@gmail.com>
 Author: Charles Taragin [aut, cre], David Benson [ctb]
 Imports: methods, BB, nleqslv, numDeriv, antitrust (>= 0.99.43)
-Suggests: testthat
+Suggests: testthat, knitr, rmarkdown
+VignetteBuilder: knitr
 Remotes: luciu5/antitrust@a941cf145353c1941e906e173d82b05bc199a6bb
 Encoding: UTF-8
 Description: Coordinated-effects models for merger analysis built on the

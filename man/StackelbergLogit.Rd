@@ -78,10 +78,10 @@ stackelberg_simulate(object,
   \item{gamma}{Optional CES elasticity, strictly greater than one. If omitted,
     it is calibrated from all usable positive observed margins.}
   \item{price_domain}{Rate domain. The default \code{"positive"} preserves
-    the existing solvers. \code{"real"} is supported only for input Logit
-    Bertrand and Cournot games and permits finite zero or negative
-    counterfactual rates;
-    CES and Bertrand combinations are rejected.}
+    the positive-rate solvers. \code{"real"} supports input Logit Bertrand
+    and Cournot games with finite zero or negative counterfactual rates.
+    Output-market and CES real-domain combinations are rejected. Constructor
+    observations and remaining model-domain checks still apply.}
   \item{weights}{Nonnegative product weights used by WLS calibration.}
   \item{control.slopes, control.equ}{Optional named solver-control lists.
     Set \code{control.equ$implicitCheck = FALSE} to skip the optional nested

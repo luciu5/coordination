@@ -19,212 +19,59 @@ This package currently implements two coordinated-effects models:
 
 ## Installation
 
-```r
-# Development bootstrap refs; CI records each resolved commit.
-devtools::install_github(
-  "luciu5/antitrust",
-  ref = "master"
-)
-devtools::install_github(
-  "luciu5/coordination",
-  ref = "main"
-)
-```
-
-The dependency minimum for the coordinated release is `antitrust >= 0.99.43`.
-For release certification, select **Release certification** in the workflow and
-provide the full 40-character antitrust candidate SHA. The workflow rejects
-branch refs in that mode and records both requested and resolved revisions.
-
-## Price Leadership Equilibrium
-
-The price leadership model follows Mansley, Miller, Sheu & Weinberg (2023). A
-coordinating coalition of firms announces a *supermarkup* above the Bertrand
-price; each coalition firm's incentive to defect from that supermarkup is
-checked against a firm-specific *timing/discount parameter*; and a competitive
-fringe best-responds to the coalition's prices.
+Run this in a fresh R session. The shared iovrse installer installs
+`coordination` with a compatible `antitrust` dependency.
 
 ```r
-library(antitrust)
-library(coordination)
-
-## Beer industry example (Mansley, Miller, Sheu & Weinberg 2023)
-fit <- ple(
-  prices       = c(0.93, 0.88, 1.10, 1.02),
-  shares       = c(0.35, 0.25, 0.25, 0.15),
-  margins      = c(0.40, NA,   0.35, 0.25),   # coalition margins + one fringe margin
-  ownerPre     = c("AB", "AB", "MC", "Fringe"),
-  ownerPost    = c("AB", "AB", "MC", "Fringe"),
-  coalitionPre = c(1, 2, 3),                  # products 1-3 coordinate; 4 is fringe
-  coalitionPost = c(1, 2, 3),
-  insideSize   = 1000
-)
-
-summary(fit)
-
-fit@supermarkupPre    # equilibrium supermarkup above Bertrand
-fit@timingParam        # calibrated firm-specific timing/discount parameter (NA if no IC binds)
-fit@bindingFirm        # which coalition firm has the binding IC constraint (NA if none)
-
-calcSlack(fit)         # incentive-compatibility slack for each coalition firm
-
-## calcSupermarkup(constrained = TRUE) finds the maximum IC-sustainable
-## supermarkup once a firm-specific timing parameter has been identified
-## from a binding constraint (see fit@bindingFirm above).
-calcSupermarkup(fit, constrained = FALSE)  # unconstrained (full-collusion) supermarkup
+source(url("https://raw.githubusercontent.com/luciu5/competitiontoolbox/master/tools/install_iovrse.R"))
+install_iovrse(packages = "coordination")
 ```
 
-### Model overview
+Use `install_iovrse()` for the complete cohort. Ordinary installation uses
+version-compatible packages; release certification is described separately below.
 
-* **Coalition and fringe.** `coalitionPre`/`coalitionPost` identify which
-  products participate in coordination; all other products are fringe and
-  price at their ordinary Bertrand best response.
-* **Supermarkup.** The coalition prices at the coordinated Bertrand price plus
-  a markup `m` (`supermarkupPre`/`supermarkupPost`).
-* **Incentive compatibility.** A coalition firm's IC constraint compares its
-  profit from continuing to coordinate against the one-period gain from
-  optimally undercutting the coalition, discounted against the Bertrand
-  punishment that follows detection.
-* **Timing parameter.** When a firm's IC constraint binds, a firm-specific
-  timing/discount parameter is calibrated from the binding constraint.
+## Available games
 
-`PriceLeadership` extends `antitrust`'s `Logit` class, so calibrated
-`PriceLeadership` fits support the ordinary `antitrust` generics
-(`calcPrices`, `calcMargins`, `calcShares`, `calcProducerSurplus`, ...) in
-addition to the coordination-specific ones (`calcSlack`, `calcSupermarkup`,
-`calcPriceLeadershipParams`).
+| Model | Public entry point | Demand and conduct |
+| --- | --- | --- |
+| Price leadership equilibrium | `ple()`, `ple.blp()` | Coordinated pricing with Logit or BLP demand |
+| Grim Trigger sustainability | `calcProducerSurplusGrimTrigger()` | Repeated-game analysis on an existing antitrust Bertrand model |
+| Firm-level Stackelberg | `stackelberg()` | Noncooperative leader/follower Logit or output CES, Bertrand or Cournot |
+| Core-fringe | `core_fringe()` | A noncooperative strategic core and fringe, Logit or output CES |
 
-## Firm-level Stackelberg Logit and CES
+The role games are separate from coordinated PLE and from antitrust's legacy
+quantity Stackelberg model. Their examples use explicit firm and role IDs.
 
-`coordination::stackelberg()` provides a separate noncooperative
-firm-level Stackelberg game for Logit or output-market CES demand. It accepts
-explicit pre/post firm-ID vectors and leader sets, supports Bertrand and
-Cournot conduct, and keeps calibrated demand and baseline costs fixed in
-`stackelberg_simulate()`.
-The constructor requires unconditional product shares with a positive outside
-share and `normIndex = NA` for Logit. CES uses unconditional revenue shares,
-inside expenditure, and a positive outside-good price.
+## Task guides
 
-```r
-fit <- stackelberg(
-  prices = c(10, 12, 11, 9),
-  shares = c(.25, .20, .18, .17),
-  margins = c(.40, .38, .35, .25),
-  ownerPre = c("A", "B", "C", "D"), leadersPre = "A",
-  conduct = "bertrand", insideSize = 1000
-)
-calcMargins(fit, level = TRUE)
-stackelberg_response(fit, method = "implicit")
-```
+The source guides remain available while rendered documentation is prepared.
+An ordinary installation does not require a document builder.
 
-For CES, pass `demand = "ces"`, a structural `gamma > 1`, and a positive
-`priceOutside`. CES calibration uses all usable positive observed margins
-when `gamma` is omitted; CES input markets are not supported.
+| Question | Guide |
+| --- | --- |
+| What do prices and margins identify about leadership? | [Prices, timing and identification](vignettes/price-leadership.Rmd) |
+| Can participating firms sustain coordination? | [Grim Trigger](vignettes/grim-trigger.Rmd) |
+| How do leader/core roles affect an ownership scenario? | [Noncooperative roles](vignettes/role-games.Rmd) |
 
-The public `stackelberg_logit_h()` and `stackelberg_ces_multipliers()` helpers
-expose the same validated firm-level multipliers used by the equilibrium
-solvers, including their multiproduct ownership and leader-response terms.
+The PLE guide deliberately starts from the existing zero-supermarkup boundary:
+missing timing does not establish full incentive compatibility. Stackelberg and
+core-fringe are separate noncooperative games. Always qualify
+`coordination::stackelberg()` because antitrust exports a different namesake.
+Logit role games use unconditional quantity shares; CES uses unconditional revenue
+shares and inside expenditure. Input Logit Bertrand/Cournot can explicitly use
+`price_domain = "real"` for signed counterfactual rates; CES remains output-only.
 
-`stackelberg_followers()` exposes actual price or quantity follower choices,
-while `stackelberg_residuals()` reports reduced leader and follower FOCs.
-This class is independent of both the legacy `antitrust::stackelberg()`
-quantity model and the coordinated `PriceLeadership` model.
+The [model reference](doc/coordination-model-reference.md) retains the longer
+identification, portfolio and deterministic BLP notes. All teaching examples use
+public APIs and in-memory inputs; no Bayesian fitting toolchain is required.
 
-## Grim Trigger sustainability analysis
+## Contributor release certification
 
-`calcProducerSurplusGrimTrigger` evaluates whether a coalition of firms
-playing an ordinary `antitrust` `Bertrand` model can sustain a fully collusive
-price under Grim Trigger strategies: each firm cooperates so long as every
-other coalition firm cooperated in the prior period, and permanently reverts
-to Bertrand pricing (the "punishment") after any defection.
-
-```r
-library(antitrust)
-library(coordination)
-
-fit <- logit(
-  prices    = c(10, 12, 11, 9),
-  shares    = c(.25, .20, .18, .17),
-  margins   = c(.40, .38, .35, .25),
-  ownerPre  = c("A", "B", "C", "D"),
-  ownerPost = c("A", "B", "C", "D"),
-  insideSize = 1000
-)
-
-## Can firms A and B (products 1-2) sustain collusion at discount factor 0.9?
-calcProducerSurplusGrimTrigger(
-  fit,
-  coalition = 1:2,
-  discount  = c(0.9, 0.9, 0.5, 0.5),
-  preMerger = TRUE
-)
-```
-
-The returned data frame reports, for each product produced by a coalition
-firm, the single-period producer surplus from coordinating (`Coord`),
-defecting (`Defect`), and Bertrand punishment (`Punish`), along with whether
-the firm's incentive-compatibility constraint holds (`IC`).
-
-`calcProducerSurplusGrimTrigger` is defined as a method on `antitrust`'s
-`Bertrand` class -- any `antitrust` model built on `Bertrand` (Logit, CES,
-BLP, nested Logit, ...) can be analyzed this way.
-
-## Package boundary
-
-* `antitrust` provides the structural demand/cost calibration core: Logit,
-  CES, Bertrand, Cournot, BLP, auctions, and bargaining. It has no dependency
-  on `coordination`.
-* `coordination` depends on `antitrust` and extends its classes
-  (`PriceLeadership` extends `Logit`) and generics
-  (`calcProducerSurplusGrimTrigger` is a method on `Bertrand`). It uses only
-  `antitrust`'s exported/public API.
-* Ordinary Stackelberg and Cournot conduct remain in `antitrust` -- they are
-  not coordinated-effects models in the sense used here.
-
-## PLE with BLP demand (`PriceLeadershipBLP`)
-
-The price leadership model is also available with BLP random-coefficients
-demand via `ple.blp()`, which returns a `PriceLeadershipBLP` object (extending
-`antitrust`'s `LogitBLP`). Supply pre-calibrated BLP demand parameters in
-`slopes` and choose an integration rule:
-
-```r
-library(antitrust)
-library(coordination)
-
-shares <- c(0.35, 0.25, 0.25, 0.15)
-prices <- c(0.93, 0.88, 1.10, 1.02)
-alpha  <- -5.767013
-
-fit <- ple.blp(
-  prices        = prices,
-  shares        = shares,
-  ownerPre      = c("Bank1", "Bank2", "Bank3", "Fringe"),
-  ownerPost     = c("Bank1", "Bank2", "Bank3", "Fringe"),
-  coalitionPre  = 1:3,
-  coalitionPost = 1:3,
-  insideSize    = 1000,
-  integration   = "gauss-hermite",
-  slopes = list(
-    alphaMean = alpha, alpha = alpha, sigma = 0.5,
-    meanval   = c(0, log(shares[-1] / shares[1]) - alpha * (prices[-1] - prices[1])),
-    sigmaNest = 1
-  )
-)
-
-summary(fit)
-```
-
-This reuses `antitrust`'s BLP machinery through its public API: mean-utility
-recovery via the exported `antitrust::calcMeanval` generic (inherited through
-`LogitBLP`) and integration-point selection via `antitrust::calcBLPintegration`.
-`coordination` does not touch any `antitrust` internals.
-
-Integration rules `"gauss-hermite"` (default for one-dimensional heterogeneity)
-and `"provided"` (caller-supplied points) are deterministic. The
-`"monte-carlo"` rule draws pseudo-random integration points, so reproducing a
-Monte-Carlo fit requires setting the same `RNGkind()` and `set.seed()` before
-the call.
+The coordinated-release minimum is `antitrust >= 0.99.43`. Maintainers can select
+**Release certification** in the workflow and supply a full 40-character
+antitrust candidate SHA. That workflow verifies the selected source and records
+requested and resolved revisions. Those certification inputs are separate from
+the ordinary installation commands above.
 
 ## References
 

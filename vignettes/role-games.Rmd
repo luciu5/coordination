@@ -1,0 +1,140 @@
+---
+title: "Noncooperative roles: leaders, followers and a fringe"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Noncooperative roles: leaders, followers and a fringe}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+How does an ownership change interact with firms' roles? This guide compares
+sequential Stackelberg leadership with a simultaneous core-fringe game. Both are
+noncooperative; neither is the PLE coordinated coalition. Use
+**coordination 0.1.0** and compatible **antitrust >= 0.99.43**. The illustrative
+Logit inputs use currency per unit and inside quantity per period.
+
+| Game | Strategic choices |
+|---|---|
+| Stackelberg | Leaders anticipate strategic followers' responses |
+| Core-fringe | Core firms choose simultaneously; fringe products use atomistic conditions |
+| PLE | A coordinating coalition faces incentive constraints and a best-responding fringe |
+
+## A leader and its followers
+
+Use the qualified name `coordination::stackelberg()`: antitrust exports a
+different legacy quantity-model function with the same name. Ownership and role
+arguments below are **firm IDs**. Shares are unconditional quantity shares,
+summing to .80, with a positive outside share .20 and `normIndex = NA`.
+
+```{r stackelberg-scenario}
+library(antitrust)
+library(coordination)
+prices <- c(10, 12, 11, 9)
+shares <- c(.25, .20, .18, .17)
+margins <- c(.40, .38, .35, .25)
+owner <- c("A", "B", "C", "D")
+leader_fit <- coordination::stackelberg(prices = prices, shares = shares,
+  margins = margins, ownerPre = owner, leadersPre = "A",
+  conduct = "bertrand", insideSize = 1000)
+leader_merger <- coordination::stackelberg_simulate(leader_fit,
+  ownerPost = c("A", "A", "C", "D"), leadersPost = "A")
+knitr::kable(data.frame(product = leader_fit@labels,
+  price_pre = antitrust::calcPrices(leader_fit, TRUE),
+  price_post = antitrust::calcPrices(leader_merger, FALSE),
+  q_pre = antitrust::calcQuantities(leader_fit, TRUE),
+  q_post = antitrust::calcQuantities(leader_merger, FALSE)), digits = 3)
+coordination::stackelberg_residuals(leader_merger, preMerger = FALSE)$max
+```
+
+Firm A acquires B's product and remains the explicit post-merger leader. Read
+price and q columns as levels; follower responses are part of the sequential
+solution. The residual reports the largest reduced leader/follower FOC error,
+not a probability or proof of a unique global equilibrium. Demand and baseline
+costs remain calibrated from the original fit in `stackelberg_simulate()`.
+
+## A simultaneous core and atomistic fringe
+
+The next baseline has A and B in the strategic core. Its merger creates one
+core firm; C and D remain fringe. An ownership change requires the intended
+post-core IDs explicitly.
+
+```{r core-fringe-scenario}
+core_fit <- coordination::core_fringe(prices = prices, shares = shares,
+  margins = margins, ownerPre = owner, corePre = c("A", "B"),
+  conduct = "bertrand", insideSize = 1000)
+core_merger <- coordination::core_fringe_simulate(core_fit,
+  ownerPost = c("A", "A", "C", "D"), corePost = "A")
+knitr::kable(data.frame(product = core_fit@labels,
+  price_pre = antitrust::calcPrices(core_fit, TRUE),
+  price_post = antitrust::calcPrices(core_merger, FALSE),
+  q_pre = antitrust::calcQuantities(core_fit, TRUE),
+  q_post = antitrust::calcQuantities(core_merger, FALSE)), digits = 3)
+coordination::core_fringe_residuals(core_merger, preMerger = FALSE)$max
+```
+
+Compare this scenario within its own fitted baseline. A core-fringe fringe
+product does not have the same strategic objective as a Stackelberg follower.
+Consequently the two tables are not merely alternative solver outputs for an
+identical game. Treat fringe influence on aggregate demand conditions as
+negligible only when the market evidence and the intended approximation justify
+it. This fringe uses an atomistic **MonCom** condition, which can retain a markup;
+it does not generically impose price equal to marginal cost. Choose strategic
+Stackelberg followers when their reactions are part of what leaders anticipate.
+
+In this fixed-cost core-fringe example C/D keep prices 11/9 while their quantities
+rise; strategic Stackelberg followers' prices also respond in their own scenario.
+That contrast follows these calibrated objectives, not a universal prediction
+that fringe prices never change. Fractional-control matrices are not substitutes
+for the required firm-ID vectors.
+
+```{r role-residual-check, include=FALSE}
+stopifnot(coordination::stackelberg_residuals(leader_merger, FALSE)$max < 1e-5,
+          coordination::core_fringe_residuals(core_merger, FALSE)$max < 1e-5)
+```
+
+## CES changes share and size units
+
+CES uses unconditional **revenue shares**, inside **expenditure**, and a positive
+outside-good price. In this example `gamma = 3` supplies the structural
+elasticity. Omitting it calibrates from usable observed margins, a different
+input assumption.
+
+```{r ces-variant}
+ces_fit <- coordination::stackelberg(demand = "ces", conduct = "bertrand",
+  gamma = 3, prices = prices, shares = shares, margins = margins,
+  ownerPre = owner, leadersPre = "A", insideSize = 1000, priceOutside = 1)
+antitrust::calcShares(ces_fit, revenue = TRUE)
+```
+
+| Demand/market | Conduct | Price domain |
+|---|---|---|
+| Output Logit | Bertrand or Cournot | Positive |
+| Input Logit | Bertrand or Cournot | Positive, or explicit `price_domain = "real"` |
+| Output CES | Bertrand or Cournot | Positive |
+| Input CES | Unsupported | — |
+
+This table applies to both role families. Input Logit real-domain support allows
+finite zero or negative **counterfactual rates**; constructor observations and
+all demand-domain conditions still apply. At zero/signed rates, proportional
+margins or revenue shares may be undefined. Use dollar markdowns
+`antitrust::calcMargins(object, level=TRUE)` and inspect the diagnostic
+attributes rather than interpreting missing normalized measures as zero.
+
+## Limits and next reading
+
+Keep explicit roles after changing ownership. These APIs do not automatically
+add products or infer leader/core identities from a merged firm name. Cost shocks
+and active-product selections have their documented meanings; they do not
+recalibrate demand. Reduced FOC checks assess numerical stationarity within the
+model and its scale, not the economic validity of the role assignment.
+
+See `?coordination::stackelberg`, `?core_fringe`, the
+[PLE identification guide](price-leadership.html) ([source](https://github.com/luciu5/coordination/blob/main/vignettes/price-leadership.Rmd)), and the
+[model reference](https://github.com/luciu5/coordination/blob/main/doc/coordination-model-reference.md).
+Tariff promotion is provided by trade under its separate physical/effective-cost
+contract; direct retention arguments in these native games require the matching
+effective-cost treatment described in help.

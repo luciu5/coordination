@@ -1,0 +1,113 @@
+---
+title: "Can a coalition sustain collusion?"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Can a coalition sustain collusion?}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+Grim Trigger compares the profit from continued coordination with one period of
+defection followed by Bertrand punishment forever. This is a sustainability
+condition under a specified repeated game, not evidence that coordination
+actually occurs. Use **coordination 0.1.0** and compatible **antitrust >= 0.99.43**.
+Prices are currency per unit; inside size is units sold per period.
+
+## Reuse a Bertrand model
+
+Firm A owns products 1 and 2 before the merger. Afterwards B also owns product 4.
+The coalition indices `c(1,3)` select products associated with two distinct
+firms, and the IC comparison includes every product in those firms' portfolios.
+
+```{r grim-fit}
+library(antitrust)
+library(coordination)
+fit <- antitrust::logit(
+  prices = c(10, 12, 11, 9), shares = c(.25, .20, .18, .17),
+  margins = c(.40, .38, .35, .25),
+  ownerPre = c("A", "A", "B", "C"),
+  ownerPost = c("A", "A", "B", "B"), insideSize = 1000
+)
+result <- calcProducerSurplusGrimTrigger(fit, coalition = c(1, 3),
+  discount = rep(.8, 4), preMerger = TRUE)
+knitr::kable(result, digits = 3)
+```
+
+`Coord`, `Defect` and `Punish` are single-period producer surplus in currency.
+`Discount` is a factor strictly between zero and one, not an interest rate.
+All products of a participating firm need valid factors, including product 2
+although it was not listed as a coalition index. `IC` is a firm-portfolio
+comparison repeated on that firm's product rows, not an independent product
+decision. `Coalition` marks membership and should not be summed as a profit.
+
+## Aggregate portfolios and change patience
+
+For a common factor delta within a firm, compare
+`C/(1-delta)` with `D + delta*P/(1-delta)`, where C, D and P sum **all** its
+product profits. A higher factor gives future punishment more weight. The next
+small sensitivity reuses the existing fitted object and changes only the
+specified discount and ownership state selected by `preMerger`.
+
+```{r grim-sensitivity}
+firm_ids <- list(pre = c("A", "A", "B", "C"),
+                 post = c("A", "A", "B", "B"))
+portfolio_results <- do.call(rbind, lapply(c(TRUE, FALSE), function(pre) {
+  state <- if (pre) "pre" else "post"
+  do.call(rbind, lapply(c(.05, .8), function(delta) {
+    out <- calcProducerSurplusGrimTrigger(fit, coalition = c(1, 3),
+      discount = rep(delta, 4), preMerger = pre)
+    firms <- firm_ids[[state]][match(rownames(out), fit@labels)]
+    do.call(rbind, lapply(unique(firms), function(firm) {
+      rows <- firms == firm
+      C <- sum(out$Coord[rows]); D <- sum(out$Defect[rows])
+      P <- sum(out$Punish[rows])
+      data.frame(state = state, firm = firm, discount = delta,
+        coord = C, defect = D, punish = P,
+        repeated_game_gain = C/(1-delta) - D - delta*P/(1-delta),
+        IC = all(out$IC[rows]))
+    }))
+  }))
+}))
+knitr::kable(portfolio_results, digits = 3)
+```
+
+Read `repeated_game_gain` in discounted currency. Positive values favor
+continued coordination. Compare the low/high discount rows within a state;
+then compare the pre/post rows for a given firm and discount. A post-merger
+portfolio can include an additional product, so comparisons must preserve the
+correct ownership state. These illustrative values are safely away from an
+exact indifference boundary.
+
+```{r portfolio-check, include=FALSE}
+stopifnot(all(portfolio_results$IC ==
+                (portfolio_results$repeated_game_gain > 0)),
+          any(!portfolio_results$IC[portfolio_results$discount == .05]),
+          all(portfolio_results$IC[portfolio_results$discount == .8]))
+```
+
+## Calibration assumptions and limitations
+
+The main workflow uses `isCollusion = FALSE`, which preserves demand/cost
+parameters calibrated from ordinary baseline ownership. Setting
+`isCollusion = TRUE` **recalibrates demand and cost** under an assumed baseline
+coalition; it is not an output-format switch. Do not toggle it merely to obtain
+an additional table.
+
+The simplified portfolio inequality above assumes a common factor within each
+firm. The API allows product-specific inputs; that general case must be
+interpreted using its actual discounted portfolio calculation. The current code
+uses a strict comparison in the pre state and a weak comparison in the post
+state at exact equality. This guide avoids equality and does not change that
+existing behavior.
+
+The method dispatches on compatible antitrust Bertrand models, including several
+demand subclasses. Compatibility does not establish empirical adequacy or a
+unique collusive outcome. See `?calcProducerSurplusGrimTrigger` for the full
+contract, the [PLE identification guide](price-leadership.html) ([source](https://github.com/luciu5/coordination/blob/main/vignettes/price-leadership.Rmd)) for a different
+calibration question, and the
+[model reference](https://github.com/luciu5/coordination/blob/main/doc/coordination-model-reference.md)
+for the longer repeated-game discussion.

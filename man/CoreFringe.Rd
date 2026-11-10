@@ -72,9 +72,10 @@ core_fringe_residuals(object, preMerger = TRUE, prices = NULL)
   \item{alpha}{Optional positive absolute Logit price coefficient.}
   \item{gamma}{Optional CES elasticity greater than one.}
   \item{price_domain}{Rate domain. The default \code{"positive"} preserves
-    the existing solvers. \code{"real"} is supported only for input Logit
-    Cournot games and permits finite zero or negative counterfactual rates;
-    CES and Bertrand combinations are rejected.}
+    the positive-rate solvers. \code{"real"} supports input Logit Bertrand
+    and Cournot games with finite zero or negative counterfactual rates.
+    Output-market and CES real-domain combinations are rejected. Constructor
+    observations and remaining model-domain checks still apply.}
   \item{control.slopes,control.equ}{Optional named calibration and solver
     controls.}
   \item{object}{A \code{CoreFringeLogit} or \code{CoreFringeCES} object.}

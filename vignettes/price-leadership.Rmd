@@ -1,0 +1,133 @@
+---
+title: "Price leadership: prices, timing and identification"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Price leadership: prices, timing and identification}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+What do observed prices and margins identify about coordinated pricing? This
+example illustrates a **zero-supermarkup identification boundary**. It does not
+claim a positive leadership markup or a full incentive-compatibility test when
+timing is unidentified. Use **coordination 0.1.0** with compatible
+**antitrust >= 0.99.43**. All inputs are illustrative; prices are currency per
+unit and insideSize is inside quantity.
+
+## Fit and inspect the boundary
+
+Products 1–3 form a coalition; AB owns both products 1 and 2. Coalition membership
+uses **product indices**, while ownership identifies firms. Product 4 is fringe.
+At least one coalition and one fringe margin are needed by this constructor.
+
+```{r ple-boundary}
+library(antitrust)
+library(coordination)
+fit <- coordination::ple(
+  prices = c(.93, .88, 1.10, 1.02),
+  shares = c(.35, .25, .25, .15),
+  margins = c(.40, NA, .35, .25),
+  ownerPre = c("AB", "AB", "MC", "Fringe"),
+  ownerPost = c("AB", "AB", "MC", "Fringe"),
+  coalitionPre = 1:3, coalitionPost = 1:3, insideSize = 1000
+)
+knitr::kable(data.frame(product = fit@labels, observed_price = fit@prices,
+  fitted_price = fit@pricePre), digits = 4)
+list(supermarkup = fit@supermarkupPre,
+     timing = fit@timingParam, binding_firm = fit@bindingFirm)
+```
+
+The equal-ownership warning is expected: this first scenario has no merger.
+The fitted prices need not reproduce supplied prices exactly. Compare the two
+price columns before applying this calibration to an empirical market.
+The returned supermarkup is zero and the timing parameters and binding firm
+are `NA`. Here the data identify no additional leadership supermarkup.
+`NA` timing is absence of identification, not evidence that firms have zero
+patience or that collusion is impossible.
+
+```{r ple-boundary-check, include=FALSE}
+stopifnot(abs(fit@supermarkupPre) < 1e-6,
+          all(is.na(fit@timingParam)), is.na(fit@bindingFirm),
+          all(is.finite(fit@pricePre)))
+```
+
+## Why zero slack is not a full IC result
+
+With a valid timing parameter delta, the full firm slack compares leadership,
+deviation and punishment profits:
+
+\[
+g_f=(\pi^{PL}_f-\pi^D_f)+\frac{\delta_f}{1-\delta_f}
+(\pi^{PL}_f-\pi^B_f).
+\]
+
+The full incentive constraint is satisfied when this quantity is nonnegative.
+When timing is missing, the method warns and returns only immediate payoff
+differences. That truncated quantity cannot establish the repeated-game
+condition above.
+
+```{r immediate-payoffs}
+calcSlack(fit)
+```
+
+The warning is part of the result's interpretation. Do not hide it and describe
+the returned zeros as a successful sustainability test. Likewise, a nonmissing
+binding-firm slot would require an explanation of the regime and identification
+assumptions; it is not a probability that coordination occurs.
+
+## Be explicit about pricing regimes
+
+The public price method defaults to the `coordination` regime, whereas the
+constructor solves its stored prices using `constrained`. Name the regime when
+comparing reference prices.
+
+```{r ple-regimes}
+pricing_regimes <- data.frame(product = fit@labels,
+  bertrand = antitrust::calcPrices(fit, preMerger = TRUE, regime = "bertrand"),
+  coordination = antitrust::calcPrices(fit, preMerger = TRUE,
+                                     regime = "coordination"),
+  stored_constrained = fit@pricePre)
+knitr::kable(pricing_regimes, digits = 4)
+observed_minus_coordinated <- mean(fit@prices[1:3] -
+                                    pricing_regimes$coordination[1:3])
+```
+
+Bertrand is the noncoordinated reference. Coordination uses the coalition's
+coordinated-reference FOCs. The stored supermarkup is an **additional scalar
+level-margin wedge over that coordinated reference**, not the entire
+coordination-minus-Bertrand price difference. In this calibration the mean
+observed-minus-coordinated price gap across coalition products is
+`r sprintf("%.4f", observed_minus_coordinated)` currency/unit. That nonpositive
+comparison is assigned the zero additional-wedge boundary, leaving timing
+unidentified.
+
+For example, product 1's Bertrand price is
+`r sprintf("%.4f", pricing_regimes$bertrand[1])`, while its coordinated-reference
+price is `r sprintf("%.4f", pricing_regimes$coordination[1])`, a
+`r sprintf("%.1f", 100 * (pricing_regimes$coordination[1] / pricing_regimes$bertrand[1] - 1))`%
+increase relative to Bertrand. Its stored constrained price equals the
+coordinated reference here because the additional wedge is zero. Thus zero
+additional supermarkup does not imply zero coordination-versus-Bertrand price
+difference. The positive price gap is a regime comparison, not an identified
+positive leadership wedge or an established repeated-game sustainability result.
+These differences are not uncertainty intervals.
+
+## What comes next
+
+A positive leadership demonstration would require independently validated inputs
+and a full timing/IC interpretation. Supplying a timing vector is a scenario
+assumption, distinct from identifying timing from a binding constraint. This
+guide deliberately makes no positive-coordination claim from the boundary case.
+
+For an existing Bertrand fit and an explicit discount assumption, use
+[Grim Trigger sustainability](grim-trigger.html) ([source](https://github.com/luciu5/coordination/blob/main/vignettes/grim-trigger.Rmd)). For sequential leadership or a
+simultaneous strategic core, use [noncooperative role games](role-games.html) ([source](https://github.com/luciu5/coordination/blob/main/vignettes/role-games.Rmd));
+those are different games from PLE. See `?ple`, `?calcSlack`, `?calcSupermarkup`
+and the [model reference](https://github.com/luciu5/coordination/blob/main/doc/coordination-model-reference.md)
+for longer identification notes and deterministic BLP integration. The economic
+PLE framework follows Mansley, Miller, Sheu and Weinberg (2023), as cited in the
+package help.
