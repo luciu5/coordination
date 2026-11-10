@@ -41,6 +41,8 @@ jobs:
         with:
           r-version: ${{ matrix.r }}
 
+      - uses: r-lib/actions/setup-pandoc@v2
+
       - name: Select antitrust dependency ref
         id: antitrust-ref
         env:
@@ -117,7 +119,7 @@ jobs:
         with:
           install-pandoc: false
           dependencies: '"hard"'
-          packages: any::BB, any::numDeriv, any::nleqslv, any::SQUAREM, any::testthat, any::rcmdcheck
+          packages: any::BB, any::numDeriv, any::nleqslv, any::SQUAREM, any::testthat, any::rcmdcheck, any::knitr, any::rmarkdown
 
       - name: Install selected antitrust revision
         env:
